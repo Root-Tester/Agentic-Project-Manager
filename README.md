@@ -69,8 +69,13 @@ automatically at `.data/agentic-project-manager.sqlite`; set
 Set `APM_PLATFORM_ADMIN_EMAILS` to a comma-separated list of trusted
 administrator email addresses. Keep this setting in `.env` or the hosting
 secret/configuration manager, never in the frontend or a committed file. Only
-allowlisted addresses can register as platform administrators and create
-company profiles. Without an allowlist, company creation is disabled.
+allowlisted addresses can register as platform administrators.
+
+Company owners can register directly only when `APM_PUBLIC_COMPANY_SIGNUP=true`
+and the backend SMTP settings documented in
+[hosted deployment](./docs/deployment/hosted-app.md) are configured. The owner
+must verify the email address before accessing the company. If public signup
+is disabled, an allowlisted platform administrator must create the company.
 
 The database, its WAL files, and `.env` are ignored by Git. Only schema code
 and synthetic seed data may be versioned. Do not push actual users, password
@@ -106,18 +111,18 @@ npm.cmd run start:web
 ```
 
 Open `http://127.0.0.1:3000` for the landing page. Use **Explore demo** to
-view the synthetic, read-only sample company without credentials. To create a
-company, sign in with an email from `APM_PLATFORM_ADMIN_EMAILS`, select
-**Platform administrator setup** if the account is new, then create the
-company and first owner. The owner receives a one-time generated password;
-share it privately. Company HR provisions employees, whose temporary
-passwords must be changed at first sign-in. HR managers verify new hires and
-organize them into teams. HR can update verified employees' working, leave,
-retired, or fired status; non-working status disables that employee's access
-to the company. Manager dashboards show project and task evidence, not
-automated employee ratings or employment decisions. Public
-individual/personal-workspace signup is disabled. The frontend proxies API
-calls to port `4000`. Stop either server with **Ctrl+C**.
+view the synthetic, read-only sample company without credentials. If public
+company signup is enabled, choose **Create company**, submit the company and
+owner details, and verify the owner email from the delivered link. Otherwise,
+an allowlisted platform administrator creates the company and its first
+owner. Company HR provisions employees, whose temporary passwords must be
+changed at first sign-in. HR managers verify new hires and organize them into
+teams. HR can update verified employees' working, leave, retired, or fired
+status; non-working status disables that employee's access to the company.
+Manager dashboards show project and task evidence, not automated employee
+ratings or employment decisions. Public individual/personal-workspace signup
+is disabled. The frontend proxies API calls to port `4000`. Stop either
+server with **Ctrl+C**.
 
 Gemini keys entered in the task-generation UI are held in page memory and sent
 to the authenticated backend for provider requests; they are not saved to

@@ -124,7 +124,7 @@ test('hosted API rejects untrusted provider credentials and writes within the au
       body: JSON.stringify({ value: [{ Employee_ID: 'bad' }] })
     });
 
-    test('hosted API lists only configured providers and dynamically fetches their models', async t => {
+    await t.test('hosted API lists only configured providers and dynamically fetches their models', async t => {
       const previousKey = process.env.OPENAI_API_KEY;
       const originalGet = axios.get;
       process.env.OPENAI_API_KEY = 'server-side-test-key';
@@ -165,7 +165,7 @@ test('hosted API rejects untrusted provider credentials and writes within the au
       });
     });
 
-    test('hosted task generation uses backend provider keys and reports provider auth failures', async t => {
+    await t.test('hosted task generation uses backend provider keys and reports provider auth failures', async t => {
       const previousKey = process.env.OPENAI_API_KEY;
       const originalPost = axios.post;
       process.env.OPENAI_API_KEY = 'server-only-key';

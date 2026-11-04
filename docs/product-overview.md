@@ -8,11 +8,13 @@ project tasks, and delivery progress into one company environment. Optional
 AI-assisted task generation can turn a milestone and team information into a
 proposed task list; people review and manage the resulting work.
 
-The hosted web application is company-first. A trusted platform administrator
-creates a company and its first owner. Company administrators and HR provision
-employees. An HR manager or company administrator reviews new hires before
-their company access is activated. Approved employees can be organized into
-teams and associated with project workspaces.
+The hosted web application is company-first. Depending on deployment
+configuration, an allowlisted platform administrator can create a company and
+its first owner, or a company owner can register directly and verify their
+email before accessing the new company. Company administrators and HR
+provision employees. An HR manager or company administrator reviews new hires
+before their company access is activated. Approved employees can be organized
+into teams and associated with project workspaces.
 
 ## The problem it addresses
 
