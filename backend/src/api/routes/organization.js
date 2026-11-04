@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import rateLimit from 'express-rate-limit';
 import { COMPANY_ACCESS_ROLES, getJobCatalog } from '../../../../shared/organization/job-catalog.js';
 import { ApiError } from '../errors.js';
 import { createTenantAccessMiddleware } from '../middleware/tenant-access.js';
@@ -8,6 +9,10 @@ const TEAM_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$/;
 const EXPERIENCE_LEVELS = new Set(['fresher', 'mid-level', 'senior']);
 const EMPLOYMENT_STATUSES = new Set(['working', 'on-leave', 'retired', 'fired']);
 const ACCESS_ROLES = new Set(COMPANY_ACCESS_ROLES.map(role => role.id));
+const employeeWriteRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100
+});
 
 function isCompanyManager(req) {
   return ['owner', 'admin'].includes(req.tenant.role) ||
@@ -61,6 +66,7 @@ export function createOrganizationRouter(repository, accountAuth) {
   router.post(
     '/employees',
     createTenantAccessMiddleware(repository, { capability: 'people:write' }),
+    employeeWriteRateLimiter,
     async (req, res, next) => {
       try {
         if (!accountAuth) throw new ApiError(503, 'Employee account provisioning is unavailable.');
@@ -106,6 +112,7 @@ export function createOrganizationRouter(repository, accountAuth) {
   router.post(
     '/employees/:employeeId/verify',
     createTenantAccessMiddleware(repository, { capability: 'people:write' }),
+    employeeWriteRateLimiter,
     async (req, res, next) => {
       try {
         if (!isCompanyManager(req)) {
@@ -142,6 +149,7 @@ export function createOrganizationRouter(repository, accountAuth) {
   router.post(
     '/employees/:employeeId/reject',
     createTenantAccessMiddleware(repository, { capability: 'people:write' }),
+    employeeWriteRateLimiter,
     async (req, res, next) => {
       try {
         if (!isCompanyManager(req)) {
