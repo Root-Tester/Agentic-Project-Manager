@@ -1,0 +1,22 @@
+{
+  "id": "copilot",
+  "name": "GitHub Copilot",
+  "bundleName": "copilot.zip",
+  "format": "markdown",
+  "configDir": ".github",
+  "directories": {
+    "commands": ".github/prompts",
+    "skills": ".github/skills",
+    "guides": ".github/apm-guides",
+    "agents": ".github/agents"
+  },
+  "contextAttachSyntax": "Reference the file using `#file` and select the file from the picker.",
+  "newChatGuidance": "Start a new Copilot Chat",
+  "subagentGuidance": {
+    "hasSubagents": true,
+    "toolSyntax": "#runSubagent",
+    "explorerName": "exploration",
+    "configNote": null
+  },
+  "postInstallNote": null
+}

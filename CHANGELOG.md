@@ -184,7 +184,9 @@ APM v0.4 is not backward compatible with v0.3. assets - **yet**. However:
 > **Note:** Existing v0.3 projects should be re-initialized using the new Setup Agent methodology and all v0.3 assets should be removed..
 
 ### **Getting Started**
-See the complete [documentation suite](docs/) for detailed setup instructions, concepts, and advanced usage. Read [Getting Started](docs/Getting_Started.md) for your first APM v0.4 session.
+The original v0.4 getting-started guide has been retired. For current setup
+and product information, see the [README](README.md) and
+[product overview](docs/product-overview.md).
 
 ---
 
@@ -234,6 +236,5 @@ See the complete [documentation suite](docs/) for detailed setup instructions, c
 - Created core documentation: Introduction, Workflow Overview, Getting Started, Glossary, Cursor Integration Guide, Troubleshooting.
 - Established basic repository files: README, LICENSE, CONTRIBUTING, CHANGELOG, CODE OF CONDUCT.
 - Added initial GitHub issue template for bug reports.
-
 
 

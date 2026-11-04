@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.git
+.data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+node_modules
+frontend/dist
+coverage
+npm-debug.log*

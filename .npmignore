@@ -1,7 +1,8 @@
 # Build and test (exclude from NPM package)
 build/
-scripts/
+/scripts/
 test/
+tests/
 *.test.js
 dist/
 tmp/
@@ -11,12 +12,16 @@ _standards/
 .git
 .github
 .gitignore
+.env
+.env.*
+!.env.example
 node_modules/
 templates/
 skills/
-
-# Documentation (exclude source docs and website, but keep essential CLI docs)
+frontend/
 docs/
+
+# Website and ancillary documentation
 assets/
 website/
 CONTRIBUTING.md

@@ -21,12 +21,28 @@ export async function createZipArchive(sourceDir, outputPath) {
   return new Promise((resolve, reject) => {
     const output = fs.createWriteStream(outputPath);
     const archive = archiver('zip', { zlib: { level: 9 } });
+    let settled = false;
 
-    output.on('close', () => resolve());
-    archive.on('error', (err) => reject(err));
+    const fail = err => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
 
-    archive.pipe(output);
-    archive.directory(sourceDir, false);
-    archive.finalize();
+    output.once('close', () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    });
+    output.once('error', fail);
+    archive.once('error', fail);
+
+    try {
+      archive.pipe(output);
+      archive.directory(sourceDir, false);
+      archive.finalize();
+    } catch (err) {
+      fail(err);
+    }
   });
 }

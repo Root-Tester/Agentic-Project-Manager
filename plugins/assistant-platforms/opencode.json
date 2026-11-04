@@ -1,0 +1,22 @@
+{
+  "id": "opencode",
+  "name": "OpenCode",
+  "bundleName": "opencode.zip",
+  "format": "markdown",
+  "configDir": ".opencode",
+  "directories": {
+    "commands": ".opencode/commands",
+    "skills": ".opencode/skills",
+    "guides": ".opencode/apm-guides",
+    "agents": ".opencode/agents"
+  },
+  "contextAttachSyntax": "Reference the file using `@` followed by the file name.",
+  "newChatGuidance": "Open a new terminal and start OpenCode",
+  "subagentGuidance": {
+    "hasSubagents": true,
+    "toolSyntax": "Task(subagent_type=\"explore\", prompt=\"...\")",
+    "explorerName": "explore",
+    "configNote": null
+  },
+  "postInstallNote": null
+}

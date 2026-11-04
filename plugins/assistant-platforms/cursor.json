@@ -1,0 +1,22 @@
+{
+  "id": "cursor",
+  "name": "Cursor",
+  "bundleName": "cursor.zip",
+  "format": "markdown",
+  "configDir": ".cursor",
+  "directories": {
+    "commands": ".cursor/commands",
+    "skills": ".cursor/skills",
+    "guides": ".cursor/apm-guides",
+    "agents": ".cursor/agents"
+  },
+  "contextAttachSyntax": "Reference the file using `@` and search for the file name.",
+  "newChatGuidance": "Start a new Cursor Agent chat",
+  "subagentGuidance": {
+    "hasSubagents": true,
+    "toolSyntax": "Task(subagent_type=\"explore\", prompt=\"...\")",
+    "explorerName": "explore",
+    "configNote": null
+  },
+  "postInstallNote": null
+}

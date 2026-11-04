@@ -40,12 +40,20 @@ export function validateConfig(config) {
   } else if (config.targets.length === 0) {
     errors.push('"targets" array is empty');
   } else {
+    const targetIds = new Set();
+    const bundleNames = new Set();
     config.targets.forEach((target, index) => {
       const prefix = `targets[${index}]`;
       if (!target.id) errors.push(`${prefix}: missing "id"`);
       if (!target.name) errors.push(`${prefix}: missing "name"`);
       if (!target.bundleName) errors.push(`${prefix}: missing "bundleName"`);
       if (!target.format) errors.push(`${prefix}: missing "format"`);
+      if (target.id && targetIds.has(target.id)) errors.push(`${prefix}: duplicate target id "${target.id}"`);
+      if (target.bundleName && bundleNames.has(target.bundleName)) {
+        errors.push(`${prefix}: duplicate bundle name "${target.bundleName}"`);
+      }
+      if (target.id) targetIds.add(target.id);
+      if (target.bundleName) bundleNames.add(target.bundleName);
       if (!target.directories) {
         errors.push(`${prefix}: missing "directories"`);
       } else {
@@ -60,7 +68,7 @@ export function validateConfig(config) {
 }
 
 /**
- * Loads and validates build-config.json.
+ * Loads shared build settings and registers assistant platform plugins.
  *
  * @returns {Promise<Object>} Validated configuration object.
  * @throws {BuildError} If config not found or invalid.
@@ -72,9 +80,42 @@ export async function loadConfig() {
     throw BuildError.configNotFound(configPath);
   }
 
-  const configContent = await fs.readFile(configPath, 'utf8');
-  const config = JSON.parse(configContent);
+  let config;
+  try {
+    config = JSON.parse(await fs.readFile(configPath, 'utf8'));
+  } catch (error) {
+    throw BuildError.configInvalid([`Could not parse build/build-config.json: ${error.message}`]);
+  }
 
+  const pluginsDir = path.resolve(__dirname, '..', '..', 'plugins', 'assistant-platforms');
+  let pluginFiles;
+  try {
+    pluginFiles = (await fs.readdir(pluginsDir, { withFileTypes: true }))
+      .filter(entry => entry.isFile() && entry.name.endsWith('.json'))
+      .map(entry => entry.name)
+      .sort();
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      throw BuildError.configInvalid([`Assistant platform plugin directory not found: ${pluginsDir}`]);
+    }
+    throw error;
+  }
+
+  const targets = [];
+  for (const fileName of pluginFiles) {
+    const pluginPath = path.join(pluginsDir, fileName);
+    try {
+      const target = JSON.parse(await fs.readFile(pluginPath, 'utf8'));
+      if (fileName !== `${target.id}.json`) {
+        throw new Error(`Plugin filename must match its target id (${target.id}.json).`);
+      }
+      targets.push(target);
+    } catch (error) {
+      throw BuildError.configInvalid([`Could not load ${pluginPath}: ${error.message}`]);
+    }
+  }
+
+  config.targets = targets;
   const errors = validateConfig(config);
   if (errors.length > 0) {
     throw BuildError.configInvalid(errors);

@@ -1,0 +1,22 @@
+{
+  "id": "claude",
+  "name": "Claude Code",
+  "bundleName": "claude.zip",
+  "format": "markdown",
+  "configDir": ".claude",
+  "directories": {
+    "commands": ".claude/commands",
+    "skills": ".claude/skills",
+    "guides": ".claude/apm-guides",
+    "agents": ".claude/agents"
+  },
+  "contextAttachSyntax": "Reference the file using `@` followed by the file path.",
+  "newChatGuidance": "Open a new terminal and start Claude Code",
+  "subagentGuidance": {
+    "hasSubagents": true,
+    "toolSyntax": "Agent(subagent_type=\"Explore\", prompt=\"...\")",
+    "explorerName": "Explore",
+    "configNote": null
+  },
+  "postInstallNote": null
+}

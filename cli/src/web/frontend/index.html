@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apm-auth-token" content="__APM_AUTH_TOKEN__">
+  <title>APM - Agentic Project Management Suite & Task Dashboard</title>
+  <meta name="description" content="APM (Agentic Project Management) is an open-source framework for planning, managing, and executing complex software projects with coordinated AI agent teams.">
+  <meta name="keywords" content="APM, Agentic Project Management, AI Agents, Task Manager, Gantt Chart, Kanban Board, LLM Planning, Software Project Management">
+  <link rel="stylesheet" href="index.css">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="glass-bg"></div>
+
+  <!-- Full Layout Wrap -->
+  <div class="app-container">
+    
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-symbol">▲</span>
+        <div class="logo-text">
+          <h2>APM Suite</h2>
+          <span>v1.0.1</span>
+        </div>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-nav="nav-dashboard">
+          <span class="nav-icon">📊</span> Dashboard
+        </button>
+        <button class="nav-item" data-nav="nav-timeline">
+          <span class="nav-icon">📅</span> Gantt Timeline
+        </button>
+        <button class="nav-item" data-nav="nav-kanban">
+          <span class="nav-icon">📋</span> Kanban Board
+        </button>
+        <button class="nav-item" data-nav="nav-files">
+          <span class="nav-icon">📂</span> Workspace Files
+        </button>
+        <button class="nav-item" data-nav="nav-about">
+          <span class="nav-icon">ℹ️</span> About APM
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="config-btn" class="nav-item config-btn">
+          <span class="nav-icon">⚙</span> LLM Settings
+        </button>
+        <div class="profile-card">
+          <div class="avatar-circle">M</div>
+          <div class="profile-info">
+            <h4>Workspace Manager</h4>
+            <span>Local Instance</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Action Bar -->
+      <header class="main-header">
+        <div class="header-title">
+          <h1>Milestone Planner Dashboard</h1>
+          <p>Decompose milestones, organize tasks, and assign team members dynamically.</p>
+        </div>
+        <div class="header-actions">
+          <button id="save-btn" class="btn primary-btn" disabled>💾 Save tasks.json</button>
+        </div>
+      </header>
+
+      <!-- Stats Summary Cards -->
+      <section class="stats-row">
+        <div class="stat-card">
+          <div class="stat-icon purple-glow">📋</div>
+          <div class="stat-content">
+            <span class="stat-label">Total Tasks</span>
+            <h3 id="stat-tasks">0</h3>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon blue-glow">⏱️</div>
+          <div class="stat-content">
+            <span class="stat-label">Estimated Hours</span>
+            <h3 id="stat-hours">0h</h3>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon emerald-glow">👥</div>
+          <div class="stat-content">
+            <span class="stat-label">Active Team</span>
+            <div class="avatars-group" id="stat-team-avatars">
+              <!-- Overlapping avatars populate here -->
+              <span class="no-avatars-label">-</span>
+            </div>
+            <span class="stat-detail" id="stat-team-summary">No assigned team</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon amber-glow">📈</div>
+          <div class="stat-content">
+            <span class="stat-label">Projected Window</span>
+            <h3 id="stat-progress" style="font-size: 15px; font-weight: 500; color: var(--text-muted);">No window</h3>
+            <span class="stat-detail" id="stat-window-target"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Content Workspace Grid -->
+      <div class="workspace-layout">
+        
+        <!-- Inputs Column (Workspace Files View) -->
+        <section class="panel input-panel" id="panel-inputs">
+          <div class="panel-header">
+            <h2>Workspace Inputs</h2>
+            <div class="input-toggles">
+              <button class="input-toggle-btn active" data-input-tab="tab-milestone">Milestone</button>
+              <button class="input-toggle-btn" data-input-tab="tab-employees">Employees</button>
+            </div>
+          </div>
+
+          <div class="panel-body flex-column">
+            <div class="input-tab-content active" id="tab-milestone">
+              <textarea id="milestone-input" placeholder="Define milestone details..." spellcheck="false"></textarea>
+            </div>
+            <div class="input-tab-content" id="tab-employees">
+              <p class="input-help">Optional employee field: <code>experience_level</code> can be <code>fresher</code>, <code>mid-level</code>, or <code>senior</code>. Missing levels use the mid-level baseline.</p>
+              <textarea id="employees-input" placeholder="Define employees JSON..." spellcheck="false"></textarea>
+            </div>
+          </div>
+
+          <div class="panel-footer">
+            <button id="generate-btn" class="btn action-btn">🚀 Decompose Milestone</button>
+          </div>
+        </section>
+
+        <!-- Outputs Column (Visual Dashboard) -->
+        <section class="panel output-panel">
+          <div class="panel-header">
+            <h2>Interactive Schedule Workspace</h2>
+            <div class="view-toggles">
+              <button class="view-btn active" data-view="timeline-view">Timeline</button>
+              <button class="view-btn" data-view="kanban-view">Kanban</button>
+              <button class="view-btn" data-view="table-view">List Table</button>
+              <button class="view-btn" data-view="analytics-view">📈 Analytics</button>
+            </div>
+          </div>
+
+          <div class="output-container">
+            <!-- Loading Indicator -->
+            <div id="loader" class="hidden">
+              <div class="spinner"></div>
+              <p>AI agent is thinking and decomposing the milestone...</p>
+            </div>
+
+            <!-- Empty Placeholder / Onboarding & Value Proposition -->
+            <div id="placeholder-text" class="placeholder-msg onboarding-proposition">
+              <div class="msg-icon">🚀</div>
+              <h3>Decompose Milestone using AI Agents</h3>
+              <p class="value-proposition-text">APM structures complex software projects into a coordinated system where specialized AI agents collaborate as a team to plan, coordinate, and execute tasks efficiently.</p>
+              
+              <div class="features-onboarding">
+                <div class="onboarding-step">
+                  <span class="step-num">1</span>
+                  <div>
+                    <strong>Define Scope</strong>
+                    <p>Describe your milestone and list available resources on the left.</p>
+                  </div>
+                </div>
+                <div class="onboarding-step">
+                  <span class="step-num">2</span>
+                  <div>
+                    <strong>Configure LLM</strong>
+                    <p>Click "LLM Settings" in the sidebar to configure your API Credentials.</p>
+                  </div>
+                </div>
+                <div class="onboarding-step">
+                  <span class="step-num">3</span>
+                  <div>
+                    <strong>Decompose</strong>
+                    <p>Click "Decompose Milestone" to trigger the Task Generation Agent.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Timeline / Gantt View -->
+            <div id="timeline-view" class="view-panel active hidden-view">
+              <div class="gantt-scrollable-container">
+                <div class="gantt-chart-wrapper">
+                  <div class="timeline-header">
+                    <div class="gantt-label-col">Task & Assignee</div>
+                    <div class="gantt-timeline-col" id="timeline-grid-days">
+                      <!-- Dynamically populated days -->
+                    </div>
+                  </div>
+                  <div class="gantt-rows" id="gantt-rows-container">
+                    <!-- Dynamically populated tasks -->
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Kanban Board View -->
+            <div id="kanban-view" class="view-panel hidden-view">
+              <div class="kanban-board">
+                <div class="kanban-col" id="col-high">
+                  <div class="col-title high-pri">🔥 High Priority</div>
+                  <div class="cards-list" id="list-high"></div>
+                </div>
+                <div class="kanban-col" id="col-medium">
+                  <div class="col-title med-pri">⚡ Medium Priority</div>
+                  <div class="cards-list" id="list-medium"></div>
+                </div>
+                <div class="kanban-col" id="col-low">
+                  <div class="col-title low-pri">❄️ Low Priority</div>
+                  <div class="cards-list" id="list-low"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Data Table List View -->
+            <div id="table-view" class="view-panel hidden-view">
+              <div class="table-wrapper">
+                <table class="tasks-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Task Name</th>
+                      <th>Assignee</th>
+                      <th>Schedules</th>
+                      <th>Priority</th>
+                      <th>Status</th>
+                      <th>Hours</th>
+                      <th>Dependencies</th>
+                    </tr>
+                  </thead>
+                  <tbody id="table-rows-container">
+                    <!-- Table rows -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Analytics View -->
+            <div id="analytics-view" class="view-panel hidden-view">
+              <div class="analytics-dashboard">
+                <div class="analytics-row">
+                  <div class="analytics-card">
+                    <h4>📊 Task Status Distribution</h4>
+                    <div id="analytics-status-chart" class="chart-mock"></div>
+                  </div>
+                  <div class="analytics-card">
+                    <h4>👥 Resource Workload Allocations</h4>
+                    <div id="analytics-workload-chart" class="chart-mock"></div>
+                  </div>
+                </div>
+                <div class="analytics-row">
+                  <div class="analytics-card full-width">
+                    <h4>🔑 Critical Path & Project Health</h4>
+                    <div id="analytics-health-summary"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- About Section Panel -->
+        <section class="panel" id="panel-about" style="display: none; grid-column: 1 / -1; height: 100%;">
+          <div class="panel-header">
+            <h2>ℹ️ About Agentic Project Management (APM)</h2>
+          </div>
+          <div class="panel-body about-body-container">
+            <div class="about-section-content">
+              <h3>What is APM?</h3>
+              <p>APM is an open-source framework designed for managing ambitious software projects with AI assistants. Instead of using a single, increasingly chaotic chat context, APM coordinates specialized AI agents (Planner, Manager, and Workers) working as a cohesive team to execute tasks efficiently.</p>
+              
+              <h3>📖 How to Use</h3>
+              <ol class="about-list">
+                <li><strong>Define Workspace Scope</strong>: Navigate to <em>Workspace Files</em> in the sidebar. Describe your milestone under the <strong>Milestone</strong> tab, and list your development team under the <strong>Employees</strong> tab (as a JSON array).</li>
+                <li><strong>Set LLM Credentials</strong>: Click <strong>LLM Settings</strong> in the sidebar. Choose your API provider (Gemini, Anthropic, or OpenAI), set your API key, and specify any custom model overrides.</li>
+                <li><strong>Generate & Decompose</strong>: Tapping <strong>Decompose Milestone</strong> triggers the Task Generation Agent. The LLM breaks down the milestone, figures out task dependencies, schedules dates within the milestone window, and assigns tasks to the best-suited employees.</li>
+                <li><strong>Visualize & Refine</strong>: Use the <strong>Timeline</strong> (Gantt chart), <strong>Kanban</strong>, <strong>List Table</strong>, and <strong>Analytics</strong> views to inspect schedules and workload balance. Click on any task card or row to edit its attributes.</li>
+                <li><strong>Save Results</strong>: Click the <strong>Save tasks.json</strong> CTA in the top right to write the compiled schedule directly back to your local workspace files.</li>
+              </ol>
+
+              <h3>🤖 Important Things About the Models</h3>
+              <ul class="about-list">
+                <li><strong>Google Gemini (Recommended)</strong>: Selected by default. Highly cost-effective and extremely fast. Adheres precisely to the required JSON schema output structure.</li>
+                <li><strong>Anthropic Claude</strong>: Unparalleled reasoning capabilities for logical decomposition and ordering complex dependency tracks.</li>
+                <li><strong>OpenAI GPT</strong>: Solid, consistent task scheduling heuristics and reliable JSON-object structure rendering.</li>
+                <li><strong>Anti-Hallucination Boundaries</strong>: APM enforces strict validators to ensure that dates remain within milestone windows, task priorities map correctly, and tasks are assigned only to resources listed in your employee JSON.</li>
+              </ul>
+
+              <h3>⚖️ License & Copyright</h3>
+              <p>APM is licensed under the <strong>Mozilla Public License 2.0 (MPL-2.0)</strong>. It is 100% free and open-source for personal and commercial applications.</p>
+              <p class="about-copyright">Copyright &copy; 2026 APM Team &amp; Contributors. All rights reserved.</p>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Settings Configuration Modal -->
+  <div id="config-modal" class="modal hidden">
+    <div class="modal-content glassmorphism">
+      <div class="modal-header">
+        <h3>🔑 LLM Provider Configuration</h3>
+        <span class="close-modal">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="provider-select">Provider:</label>
+          <select id="provider-select">
+            <option value="gemini">Google Gemini</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic Claude</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="model-select">Available models:</label>
+          <select id="model-select" disabled>
+            <option value="">Enter an API key and load models</option>
+          </select>
+          <button type="button" id="refresh-models-btn" class="btn secondary-btn">Load / refresh models</button>
+          <small id="model-status" class="help-text" role="status" aria-live="polite"></small>
+        </div>
+        <div class="form-group">
+          <label for="api-key-input">API Key Secret:</label>
+          <input type="password" id="api-key-input" placeholder="Paste your API key here...">
+          <small class="help-text">Kept only in this browser session and sent to the selected provider through the local APM server.</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="save-config-btn" class="btn primary-btn active-btn">Save Configurations</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task Edit Modal -->
+  <div id="task-modal" class="modal hidden">
+    <div class="modal-content glassmorphism">
+      <div class="modal-header">
+        <h3>✏️ Edit Task: <span id="editor-task-id"></span></h3>
+        <span class="close-modal" id="close-task-modal">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="editor-task-name">Task Name:</label>
+          <input type="text" id="editor-task-name">
+        </div>
+        <div class="form-group">
+          <label for="editor-task-desc">Description:</label>
+          <textarea id="editor-task-desc" style="height: 70px;"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="editor-task-assignee">Assignee:</label>
+            <select id="editor-task-assignee">
+              <!-- Populated -->
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="editor-task-priority">Priority:</label>
+            <select id="editor-task-priority">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="editor-task-status">Workflow status:</label>
+            <select id="editor-task-status">
+              <option value="not-started">Not started</option>
+              <option value="just-started">Just started</option>
+              <option value="in-progress">In progress</option>
+              <option value="testing">Testing</option>
+              <option value="debugging">Debugging</option>
+              <option value="client-review">Client review</option>
+              <option value="completed">Completed</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="editor-task-start">Start Date:</label>
+            <input type="date" id="editor-task-start">
+          </div>
+          <div class="form-group">
+            <label for="editor-task-end">End Date:</label>
+            <input type="date" id="editor-task-end">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="editor-task-hours">Estimated Hours:</label>
+            <input type="number" id="editor-task-hours">
+          </div>
+          <div class="form-group">
+            <label for="editor-task-deps">Dependencies:</label>
+            <input type="text" id="editor-task-deps" placeholder="e.g. T1, T2">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="delete-task-btn" class="btn danger-btn" style="margin-right: auto;">Delete</button>
+        <button id="save-task-btn" class="btn primary-btn active-btn">Save changes</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

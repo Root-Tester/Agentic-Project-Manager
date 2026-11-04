@@ -29,14 +29,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '22.x'
 
       - name: Determine Version
         id: version
+        env:
+          VERSION_INPUT: ${{ github.event.inputs.version }}
         run: |
-          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+          if [[ -n "$VERSION_INPUT" ]]; then
             # Use provided version override
-            VERSION="${{ github.event.inputs.version }}"
+            VERSION="$VERSION_INPUT"
+            if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+              echo "Invalid version. Use semantic version format, for example 1.2.3 or 1.2.3-beta-1."
+              exit 1
+            fi
             echo "Using version override: $VERSION"
           else
             # Find latest stable release tag (vX.Y.Z without pre-release suffix)
