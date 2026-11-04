@@ -11,7 +11,13 @@ test('provider model discovery returns only usable, account-available models', a
   const requests = [];
   axios.get = async (url, config) => {
     requests.push({ url, config });
-    if (url.endsWith('/models') && url.includes('generativelanguage.googleapis.com')) {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      parsedUrl = null;
+    }
+    if (parsedUrl?.pathname.endsWith('/models') && parsedUrl?.hostname === 'generativelanguage.googleapis.com') {
       if (config.params.pageToken) {
         return {
           data: {
@@ -31,7 +37,7 @@ test('provider model discovery returns only usable, account-available models', a
         }
       };
     }
-    if (url.endsWith('/models') && url.includes('api.openai.com')) {
+    if (parsedUrl?.pathname.endsWith('/models') && parsedUrl?.hostname === 'api.openai.com') {
       return {
         data: {
           data: [
