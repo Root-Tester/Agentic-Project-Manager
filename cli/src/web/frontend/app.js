@@ -108,13 +108,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const viewButtons = document.querySelectorAll('.view-btn');
   const viewPanels = document.querySelectorAll('.view-panel');
 
-  // Load Settings from LocalStorage
+  // Load non-sensitive settings from LocalStorage
   providerSelect.value = localStorage.getItem('apm_provider') || 'gemini';
   let savedModel = localStorage.getItem('apm_model') || '';
-  const savedApiKey = sessionStorage.getItem('apm_key') || localStorage.getItem('apm_key') || '';
-  apiKeyInput.value = savedApiKey;
-  if (savedApiKey) sessionStorage.setItem('apm_key', savedApiKey);
-  localStorage.removeItem('apm_key');
+  // Do not persist API keys in browser storage.
+  apiKeyInput.value = '';
 
   // Centrally control output views and placeholder visibility based on tasks presence
   function refreshViewVisibility() {
@@ -279,7 +277,6 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('apm_provider', providerSelect.value);
     localStorage.setItem('apm_model', modelSelect.value);
     savedModel = modelSelect.value;
-    sessionStorage.setItem('apm_key', apiKeyInput.value.trim());
     await loadAvailableModels();
     if (modelSelect.value) configModal.classList.add('hidden');
     else configModal.classList.remove('hidden');
