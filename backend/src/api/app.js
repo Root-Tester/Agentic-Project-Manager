@@ -115,7 +115,14 @@ export function createApiApp({
       }
     });
 
-    app.post('/api/v1/auth/change-password', async (req, res, next) => {
+    const changePasswordLimiter = rateLimit({
+      windowMs: config.rateLimitWindowMs || 15 * 60 * 1000,
+      max: config.rateLimitMax || 100,
+      standardHeaders: true,
+      legacyHeaders: false
+    });
+
+    app.post('/api/v1/auth/change-password', changePasswordLimiter, async (req, res, next) => {
       try {
         const authorization = req.headers.authorization || '';
         if (!authorization.startsWith('Bearer ')) {
