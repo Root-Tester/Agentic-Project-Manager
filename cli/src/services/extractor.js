@@ -45,7 +45,19 @@ export async function extractBundle(zipBuffer, destPath, options = {}) {
     for (const entry of entries) {
       if (entry.isDirectory) continue;
 
-      const entryPath = entry.entryName;
+      const rawEntryPath = entry.entryName;
+      const entryPath = path.posix.normalize(rawEntryPath.replace(/\\/g, '/'));
+
+      // Block unsafe archive entry paths (Zip Slip / absolute path / null byte)
+      const pathSegments = entryPath.split('/');
+      if (
+        entryPath.includes('\0') ||
+        path.posix.isAbsolute(entryPath) ||
+        pathSegments.includes('..')
+      ) {
+        logger.warn(`Blocked unsafe archive entry: ${rawEntryPath}`);
+        continue;
+      }
 
       // Filter by extraction mode
       if (skipApm && entryPath.startsWith('.apm/')) continue;
@@ -60,12 +72,12 @@ export async function extractBundle(zipBuffer, destPath, options = {}) {
 
       // Block path traversal — skip entries that escape the destination
       if (!resolvedFull.startsWith(resolvedDest + path.sep) && resolvedFull !== resolvedDest) {
-        logger.warn(`Blocked path traversal entry: ${entryPath}`);
+        logger.warn(`Blocked path traversal entry: ${rawEntryPath}`);
         continue;
       }
 
-      await fs.ensureDir(path.dirname(fullPath));
-      await fs.writeFile(fullPath, entry.getData());
+      await fs.ensureDir(path.dirname(resolvedFull));
+      await fs.writeFile(resolvedFull, entry.getData());
       writtenFiles.push(entryPath);
     }
 
