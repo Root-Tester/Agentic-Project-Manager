@@ -106,7 +106,9 @@ async function processTemplate(templatePath, options) {
       if (target.id === 'codex') {
         // Codex: agents are TOML files with developer_instructions
         const name = frontmatter.name || basename;
-        const description = (frontmatter.description || '').replace(/"/g, '\\"');
+        const description = (frontmatter.description || '')
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"');
         finalContent = `name = "${name}"\ndescription = "${description}"\n\ndeveloper_instructions = """\n${processedBody}\n"""\n`;
         outputPath = path.join(agentsDir, `${basename}.toml`);
       } else {
