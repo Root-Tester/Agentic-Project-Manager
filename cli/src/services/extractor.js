@@ -51,8 +51,11 @@ export async function extractBundle(zipBuffer, destPath, options = {}) {
       // Block unsafe archive entry paths (Zip Slip / absolute path / null byte)
       const pathSegments = entryPath.split('/');
       if (
+        !entryPath ||
+        entryPath === '.' ||
         entryPath.includes('\0') ||
         path.posix.isAbsolute(entryPath) ||
+        path.isAbsolute(entryPath) ||
         pathSegments.includes('..')
       ) {
         logger.warn(`Blocked unsafe archive entry: ${rawEntryPath}`);
@@ -66,12 +69,17 @@ export async function extractBundle(zipBuffer, destPath, options = {}) {
       // Never overwrite archives during extraction
       if (entryPath.startsWith('.apm/archives/')) continue;
 
-      const fullPath = path.join(destPath, entryPath);
       const resolvedDest = path.resolve(destPath);
-      const resolvedFull = path.resolve(fullPath);
+      const resolvedFull = path.resolve(resolvedDest, entryPath);
+      const relativeToDest = path.relative(resolvedDest, resolvedFull);
 
       // Block path traversal — skip entries that escape the destination
-      if (!resolvedFull.startsWith(resolvedDest + path.sep) && resolvedFull !== resolvedDest) {
+      if (
+        !relativeToDest ||
+        relativeToDest === '.' ||
+        relativeToDest.startsWith('..') ||
+        path.isAbsolute(relativeToDest)
+      ) {
         logger.warn(`Blocked path traversal entry: ${rawEntryPath}`);
         continue;
       }
