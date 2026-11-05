@@ -9,8 +9,7 @@
     "generate:jwt-secret": "node scripts/generate-jwt-secret.js",
     "dev": "node backend/src/server.js",
     "start:api": "node backend/src/server.js",
-    "start:web": "vite --config frontend/vite.config.js frontend --host 127.0.0.1 --port 3000 --strictPort",
-    "dev:web": "vite --config frontend/vite.config.js frontend",
+    "start:web": "vite --config frontend/vite.config.js frontend --host 0.0.0.0 --port ${PORT:-3000} --strictPort"    "dev:web": "vite --config frontend/vite.config.js frontend",
     "build:web": "vite build --config frontend/vite.config.js frontend",
     "test": "node --test"
   },
