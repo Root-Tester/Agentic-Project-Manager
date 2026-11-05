@@ -137,8 +137,15 @@ export function createApiApp({
   const tokenVerifier = accountAuth
     ? token => accountAuth.verifyToken(token)
     : verifyToken;
+  const authenticatedApiLimiter = rateLimit({
+    windowMs: config.rateLimitWindowMs || 15 * 60 * 1000,
+    max: config.rateLimitMax || 100,
+    standardHeaders: true,
+    legacyHeaders: false
+  });
   app.use(
     '/api/v1/tenants',
+    authenticatedApiLimiter,
     createAuthenticationMiddleware({
       issuer: config.issuer || 'agentic-project-manager',
       audience: config.audience || 'agentic-project-manager-web',
@@ -150,6 +157,7 @@ export function createApiApp({
   if (accountAuth) {
     app.use(
       '/api/v1/platform',
+      authenticatedApiLimiter,
       createPlatformRouter({
         config: { ...config, platformAdminEmails: config.platformAdminEmails || [] },
         repository,
