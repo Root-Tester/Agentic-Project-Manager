@@ -7,7 +7,10 @@
  */
 
 import fs from 'fs-extra';
-import archiver from 'archiver';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const archiver = require('archiver');
 
 /**
  * Creates a ZIP archive from a directory.
