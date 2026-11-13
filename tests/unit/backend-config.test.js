@@ -15,10 +15,12 @@ test('backend config requires a strong JWT secret and defaults to local SQLite',
   assert.equal(config.port, 4000);
   assert.equal(config.issuer, 'agentic-project-manager');
   assert.deepEqual(config.platformAdminEmails, []);
-  assert.deepEqual(config.corsOrigins, [
-    'http://127.0.0.1:3000',
-    'http://localhost:3000'
-  ]);
+  assert.deepStrictEqual(config.corsOrigins, [
+  'http://127.0.0.1:3000',
+  'http://localhost:3000',
+  'http://0.0.0.0:3000',
+  'https://agentic-project-manager.onrender.com'
+]);
 });
 
 test('backend config accepts explicit database path and validates ports, limits, and origins', () => {

@@ -42,7 +42,7 @@ export function loadBackendConfig(env = process.env) {
     throw new Error('APM_STORAGE_LIMIT_BYTES must be an integer of at least 1048576 bytes.');
   }
 
-  const corsOrigins = (env.CORS_ORIGINS || 'http://127.0.0.1:3000,http://localhost:3000,0.0.0.0:3000,http://*.render.com,')
+  const corsOrigins = (env.CORS_ORIGINS || 'http://127.0.0.1:3000,http://localhost:3000,http://0.0.0.0:3000,https://agentic-project-manager.onrender.com')
     .split(',')
     .map(origin => origin.trim())
     .filter(Boolean)
