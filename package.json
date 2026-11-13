@@ -54,11 +54,10 @@
     "fs-extra": "11.3.2",
     "jose": "^5.10.0",
     "mongodb": "^6.21.0",
-    "nodemailer": "^10.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.7.0",
-    "archiver": "^8.0.0",
+    "archiver": "^7.0.1",
     "js-yaml": "^4.1.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
