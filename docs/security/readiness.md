@@ -19,12 +19,17 @@ review.
 ## Application controls
 
 - **Passwords and sessions:** account passwords are validated for length and
-  stored as salted `scrypt` hashes. Authentication uses signed HS256 JWT
-  bearer tokens with issuer, audience, and expiry validation. Tokens expire
-  after two hours. Newly provisioned owner and employee accounts receive a
-  temporary password and must change it before accessing tenant data. The
-  frontend keeps access tokens in memory rather than persistent browser
-  storage.
+  stored as salted `bcrypt` hashes (cost factor 12) with backward compatibility
+  for legacy `scrypt` hashes. Authentication uses signed HS256 JWT bearer
+  tokens with issuer, audience, and expiry validation. Tokens expire after two
+  hours. Newly provisioned owner and employee accounts receive a temporary
+  password and must change it before accessing tenant data. Terms of Service,
+  Privacy Policy, and Security Policy acceptance is recorded upon setup and
+  first login. The frontend keeps access tokens in memory rather than
+  persistent browser storage.
+- **Data encryption and secret handling:** sensitive user payloads, request
+  tokens, and secret values are protected using authenticated AES-256-GCM
+  encryption with distinct 96-bit IVs and 128-bit authentication tags.
 - **Account provisioning:** platform-administrator setup is restricted to the
   server-side `APM_PLATFORM_ADMIN_EMAILS` allowlist. Company HR provisions
   employees; an HR manager or company administrator verifies pending hires.

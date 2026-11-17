@@ -2,7 +2,7 @@ import { chmod, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS users (
@@ -181,6 +181,10 @@ const SCHEMA_V2 = `
     ON team_assignments(tenant_id, employee_id);
 `;
 
+const SCHEMA_V3 = `
+  ALTER TABLE users ADD COLUMN terms_accepted_at TEXT;
+`;
+
 export async function openSqliteDatabase(filePath) {
   if (typeof filePath !== 'string' || !filePath.trim()) {
     throw new Error('APM_DATABASE_PATH must be a non-empty path.');
@@ -210,6 +214,11 @@ export async function openSqliteDatabase(filePath) {
         if (version < 2) {
           database.exec(SCHEMA_V2);
           database.exec('PRAGMA user_version = 2');
+          version = 2;
+        }
+        if (version < 3) {
+          database.exec(SCHEMA_V3);
+          database.exec('PRAGMA user_version = 3');
         }
         database.exec('COMMIT');
       } catch (error) {

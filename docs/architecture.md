@@ -82,9 +82,11 @@ claims that the project completed a formal benchmark against every alternative.
   shared transactional storage design. The CLI has separate file-backed
   storage by default and can optionally use MongoDB when explicitly
   configured; that adapter is not used by the hosted web application.
-- **HS256 JWTs and `scrypt`:** provide signed, time-limited bearer sessions and
-  password hashing without an external identity provider. JWT signatures do
-  not encrypt traffic; remote use still requires HTTPS.
+- **HS256 JWTs, `bcrypt`, and AES-256-GCM:** provide signed, time-limited
+  bearer sessions, salted bcrypt password hashing (cost factor 12) with scrypt
+  backward compatibility, and authenticated AES-256-GCM data encryption without
+  an external identity provider. JWT signatures do not encrypt traffic; remote
+  use still requires HTTPS.
 - **Docker:** packages the web app and API for a container platform such as
   Hugging Face Spaces. Persistent storage must be configured separately from
   the image for data to survive container replacement.

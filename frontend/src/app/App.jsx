@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../api/client.js';
-import { registerPlatformAdmin, signIn, startDemo, updatePassword } from '../auth.js';
+import { fetchPolicies, registerPlatformAdmin, signIn, startDemo, updatePassword } from '../auth.js';
 import { normalizeTaskStatuses, TASK_STATUSES } from '../../../shared/schemas/tasks.js';
 import { RESPONSIBILITY_PROFILES } from '../../../shared/access/capabilities.js';
 import { COMPANY_TYPES } from '../../../shared/organization/job-catalog.js';
@@ -13,6 +13,43 @@ function pretty(value) {
   return value == null ? '' : JSON.stringify(value, null, 2);
 }
 
+function PolicyModal({ type, policies, onClose }) {
+  if (!type) return null;
+  const policy = type === 'terms'
+    ? policies?.termsOfService
+    : type === 'privacy'
+      ? policies?.privacyPolicy
+      : policies?.securityPolicy;
+
+  return (
+    <div className="policy-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="policy-modal" onClick={e => e.stopPropagation()}>
+        <div className="policy-modal-header">
+          <h2>{policy?.title || 'System Policy'}</h2>
+          <button className="secondary" type="button" onClick={onClose}>✕</button>
+        </div>
+        <div className="policy-modal-content">
+          <p><em>Effective Date: {policy?.lastUpdated || policies?.effectiveDate || '2026-11-17'}</em></p>
+          <p><strong>{policy?.summary}</strong></p>
+          {policy?.sections ? (
+            policy.sections.map((section, idx) => (
+              <article key={idx}>
+                <h3>{section.heading}</h3>
+                <p>{section.body}</p>
+              </article>
+            ))
+          ) : (
+            <p>Loading policy details…</p>
+          )}
+        </div>
+        <div className="policy-modal-footer">
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [authMode, setAuthMode] = useState('landing');
@@ -20,6 +57,9 @@ export default function App() {
   const [authName, setAuthName] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [activePolicyModal, setActivePolicyModal] = useState(null);
+  const [policies, setPolicies] = useState(null);
   const [companyForm, setCompanyForm] = useState({
     name: '', companyType: 'technology', website: '', ownerName: '', ownerEmail: ''
   });
@@ -396,6 +436,18 @@ export default function App() {
     }
   }
 
+  const openPolicy = async type => {
+    setActivePolicyModal(type);
+    if (!policies) {
+      try {
+        const data = await fetchPolicies();
+        setPolicies(data.policies);
+      } catch (err) {
+        setError(err.message);
+      }
+    }
+  };
+
   async function submitAccount(event) {
     event.preventDefault();
     setBusy(true);
@@ -405,10 +457,12 @@ export default function App() {
         ? await registerPlatformAdmin({
           email: authEmail,
           displayName: authName,
-          password: authPassword
+          password: authPassword,
+          agreeToTerms
         })
         : await signIn(authEmail, authPassword);
       setAuthPassword('');
+      setAgreeToTerms(false);
       setUser(session);
       if (!session.must_change_password) await loadTenants(session);
     } catch (cause) {
@@ -437,8 +491,9 @@ export default function App() {
     setBusy(true);
     setError('');
     try {
-      const session = await updatePassword(user.access_token, newPassword);
+      const session = await updatePassword(user.access_token, newPassword, agreeToTerms);
       setNewPassword('');
+      setAgreeToTerms(false);
       setUser(session);
       await loadTenants(session);
     } catch (cause) {
@@ -529,9 +584,19 @@ export default function App() {
           </ol>
         </section>
         <footer className="landing-footer">
-          <span>Company access is provisioned by an administrator; public individual registration is disabled.</span>
-          <button className="text-button" onClick={() => { setAuthMode('register'); setError(''); }}>Platform administrator setup</button>
+          <div>
+            <span>Company access is provisioned by an administrator; public individual registration is disabled.</span>
+            <div className="landing-legal-links" style={{ marginTop: '8px' }}>
+              <button type="button" className="text-link" onClick={() => openPolicy('terms')}>Terms of Service</button>
+              <span>·</span>
+              <button type="button" className="text-link" onClick={() => openPolicy('privacy')}>Privacy Notice</button>
+              <span>·</span>
+              <button type="button" className="text-link" onClick={() => openPolicy('security')}>Security Policy</button>
+            </div>
+          </div>
+          <button className="text-button" onClick={() => { setAuthMode('register'); setError(''); setAgreeToTerms(false); }}>Platform administrator setup</button>
         </footer>
+        <PolicyModal type={activePolicyModal} policies={policies} onClose={() => setActivePolicyModal(null)} />
       </main>
     );
   }
@@ -558,12 +623,29 @@ export default function App() {
               <input type="password" autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} value={authPassword} onChange={event => setAuthPassword(event.target.value)} minLength={authMode === 'register' ? 12 : 1} maxLength={128} required />
             </label>
             {authMode === 'register' && <p className="feature-note">Use at least 12 characters. Administrator emails are configured only in the backend environment.</p>}
-            <button disabled={busy}>{busy ? 'Please wait…' : authMode === 'register' ? 'Create administrator account' : 'Sign in'}</button>
+            {authMode === 'register' && (
+              <label className="policy-checkbox">
+                <input
+                  type="checkbox"
+                  checked={agreeToTerms}
+                  onChange={event => setAgreeToTerms(event.target.checked)}
+                  required
+                />
+                <span>
+                  I agree to the{' '}
+                  <button type="button" className="text-link" onClick={() => openPolicy('terms')}>Terms of Service</button>,{' '}
+                  <button type="button" className="text-link" onClick={() => openPolicy('privacy')}>Privacy Policy</button>, and{' '}
+                  <button type="button" className="text-link" onClick={() => openPolicy('security')}>Security Policy</button>.
+                </span>
+              </label>
+            )}
+            <button disabled={busy || (authMode === 'register' && !agreeToTerms)}>{busy ? 'Please wait…' : authMode === 'register' ? 'Create administrator account' : 'Sign in'}</button>
           </form>
           {authMode === 'login' && <p className="auth-switch">Platform administrator?{' '}
-            <button className="text-button" type="button" onClick={() => { setAuthMode('register'); setError(''); }}>Create administrator account</button>
+            <button className="text-button" type="button" onClick={() => { setAuthMode('register'); setError(''); setAgreeToTerms(false); }}>Create administrator account</button>
           </p>}
         </section>
+        <PolicyModal type={activePolicyModal} policies={policies} onClose={() => setActivePolicyModal(null)} />
       </main>
     );
   }
@@ -580,9 +662,24 @@ export default function App() {
             <label>New password
               <input type="password" autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} minLength={12} maxLength={128} required />
             </label>
-            <button disabled={busy || newPassword.length < 12}>{busy ? 'Saving…' : 'Update password'}</button>
+            <label className="policy-checkbox">
+              <input
+                type="checkbox"
+                checked={agreeToTerms}
+                onChange={event => setAgreeToTerms(event.target.checked)}
+                required
+              />
+              <span>
+                I agree to the{' '}
+                <button type="button" className="text-link" onClick={() => openPolicy('terms')}>Terms of Service</button>,{' '}
+                <button type="button" className="text-link" onClick={() => openPolicy('privacy')}>Privacy Policy</button>, and{' '}
+                <button type="button" className="text-link" onClick={() => openPolicy('security')}>Security Policy</button>.
+              </span>
+            </label>
+            <button disabled={busy || newPassword.length < 12 || !agreeToTerms}>{busy ? 'Saving…' : 'Update password'}</button>
           </form>
         </section>
+        <PolicyModal type={activePolicyModal} policies={policies} onClose={() => setActivePolicyModal(null)} />
       </main>
     );
   }

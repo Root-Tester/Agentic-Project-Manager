@@ -1,12 +1,14 @@
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 
 const scrypt = promisify(scryptCallback);
 const ISSUER = 'agentic-project-manager';
 const AUDIENCE = 'agentic-project-manager-web';
 const SCRYPT_KEY_LENGTH = 64;
-const DUMMY_PASSWORD_HASH = hashPassword(randomBytes(32).toString('hex'));
+const BCRYPT_ROUNDS = 12;
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(randomBytes(16).toString('hex'), 10);
 
 function normalizeEmail(email) {
   return typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -20,7 +22,7 @@ function publicProfile(account) {
   };
 }
 
-export function validateRegistration({ email, displayName, password } = {}) {
+export function validateRegistration({ email, displayName, password, agreeToTerms } = {}) {
   const normalizedEmail = normalizeEmail(email);
   if (normalizedEmail.length > 254 ||
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
@@ -32,25 +34,26 @@ export function validateRegistration({ email, displayName, password } = {}) {
   if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
     throw new Error('Password must contain 12-128 characters.');
   }
+  if (agreeToTerms === false) {
+    throw new Error('You must accept the Terms of Service, User Policy, and Security Policy to continue.');
+  }
   return {
     email: normalizedEmail,
     displayName: displayName.trim(),
-    password
+    password,
+    agreeToTerms: agreeToTerms !== false
   };
 }
 
 async function hashPassword(password) {
-  const salt = randomBytes(16);
-  const derived = await scrypt(password, salt, SCRYPT_KEY_LENGTH, {
-    N: 16_384,
-    r: 8,
-    p: 1,
-    maxmem: 64 * 1024 * 1024
-  });
-  return `scrypt$16384$8$1$${salt.toString('base64url')}$${Buffer.from(derived).toString('base64url')}`;
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
 async function verifyPassword(password, encodedHash) {
+  if (typeof encodedHash !== 'string' || !encodedHash) return false;
+  if (encodedHash.startsWith('$2a$') || encodedHash.startsWith('$2b$')) {
+    return bcrypt.compare(password, encodedHash);
+  }
   const [, n, r, p, saltValue, hashValue] = String(encodedHash).split('$');
   if (n !== '16384' || r !== '8' || p !== '1' || !saltValue || !hashValue) return false;
   const salt = Buffer.from(saltValue, 'base64url');
@@ -98,6 +101,7 @@ export function createAccountAuth({ repository, secret, platformAdminEmails = []
       expires_in: 7200,
       profile: publicProfile(account),
       must_change_password: mustChangePassword,
+      terms_accepted: Boolean(account.termsAcceptedAt),
       platform_admin: platformAdmin,
       demo_read_only: demoReadOnly
     };
@@ -113,7 +117,8 @@ export function createAccountAuth({ repository, secret, platformAdminEmails = []
       const account = await repository.createPlatformAdminAccount({
         email: registration.email,
         displayName: registration.displayName,
-        passwordHash
+        passwordHash,
+        termsAcceptedAt: new Date().toISOString()
       });
       return issueToken(account);
     },
@@ -221,11 +226,14 @@ export function createAccountAuth({ repository, secret, platformAdminEmails = []
       return issueToken(account);
     },
 
-    async changePassword(subject, password) {
+    async changePassword(subject, password, { agreeToTerms } = {}) {
+      if (agreeToTerms === false) {
+        throw new Error('You must accept the Terms of Service, User Policy, and Security Policy to continue.');
+      }
       if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
         throw new Error('Password must contain 12-128 characters.');
       }
-      await repository.updateAccountPassword(subject, await hashPassword(password));
+      await repository.updateAccountPassword(subject, await hashPassword(password), new Date().toISOString());
       const account = await repository.getAccountBySubject(subject);
       if (!account || account.status !== 'active') throw new Error('Account is unavailable.');
       return issueToken(account);

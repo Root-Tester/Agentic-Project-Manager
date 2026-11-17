@@ -43,10 +43,14 @@ test('upgrades a version-one database without losing users or tenant records', a
   legacy.close();
 
   storage = await openSqliteDatabase(filePath);
-  assert.equal(storage.database.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(storage.database.prepare('PRAGMA user_version').get().user_version, 3);
   assert.equal(
     storage.database.prepare('SELECT email FROM users WHERE subject = ?').get('existing-user').email,
     'existing@company.test'
+  );
+  assert.equal(
+    storage.database.prepare('SELECT terms_accepted_at FROM users WHERE subject = ?').get('existing-user').terms_accepted_at,
+    null
   );
   assert.equal(
     storage.database.prepare('SELECT must_change_password FROM users WHERE subject = ?').get('existing-user').must_change_password,

@@ -187,15 +187,15 @@ export class WorkspaceRepository {
     return { subject, tenantId, email, displayName, createdAt: now };
   }
 
-  async createPlatformAdminAccount({ email, displayName, passwordHash }) {
+  async createPlatformAdminAccount({ email, displayName, passwordHash, termsAcceptedAt = new Date().toISOString() }) {
     const subject = randomUUID();
     const now = new Date().toISOString();
     await this.ensureStorageCapacity(Buffer.byteLength(JSON.stringify({ email, displayName, passwordHash })));
     this.database.prepare(
-      `INSERT INTO users (subject, email, display_name, password_hash, created_at)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(subject, email, displayName, passwordHash, now);
-    return { subject, email, displayName, status: 'active', mustChangePassword: false, createdAt: now };
+      `INSERT INTO users (subject, email, display_name, password_hash, terms_accepted_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(subject, email, displayName, passwordHash, termsAcceptedAt, now);
+    return { subject, email, displayName, status: 'active', mustChangePassword: false, termsAcceptedAt, createdAt: now };
   }
 
   async createCompany({
@@ -641,10 +641,10 @@ export class WorkspaceRepository {
     };
   }
 
-  async updateAccountPassword(subject, passwordHash) {
+  async updateAccountPassword(subject, passwordHash, termsAcceptedAt = new Date().toISOString()) {
     return this.database.prepare(
-      'UPDATE users SET password_hash = ?, must_change_password = 0 WHERE subject = ? AND status = ?'
-    ).run(passwordHash, subject, 'active').changes > 0;
+      'UPDATE users SET password_hash = ?, must_change_password = 0, terms_accepted_at = COALESCE(?, terms_accepted_at) WHERE subject = ? AND status = ?'
+    ).run(passwordHash, termsAcceptedAt, subject, 'active').changes > 0;
   }
 
   async getDemoAccount() {
@@ -793,7 +793,8 @@ export class WorkspaceRepository {
     const account = this.database.prepare(
       `SELECT subject, email, display_name AS displayName,
         password_hash AS passwordHash, status,
-        must_change_password AS mustChangePassword
+        must_change_password AS mustChangePassword,
+        terms_accepted_at AS termsAcceptedAt
        FROM users WHERE email = ? COLLATE NOCASE`
     ).get(email);
     return account || null;
@@ -802,7 +803,8 @@ export class WorkspaceRepository {
   async getAccountBySubject(subject) {
     return this.database.prepare(
       `SELECT subject, email, display_name AS displayName, status,
-        must_change_password AS mustChangePassword
+        must_change_password AS mustChangePassword,
+        terms_accepted_at AS termsAcceptedAt
        FROM users WHERE subject = ?`
     ).get(subject) || null;
   }

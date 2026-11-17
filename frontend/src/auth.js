@@ -24,8 +24,16 @@ export function signIn(email, password) {
   return submitCredentials('login', { email, password });
 }
 
-export function registerPlatformAdmin({ email, displayName, password }) {
-  return submitCredentials('register', { email, displayName, password });
+export function registerPlatformAdmin({ email, displayName, password, agreeToTerms }) {
+  return submitCredentials('register', { email, displayName, password, agreeToTerms });
+}
+
+export async function fetchPolicies() {
+  const response = await fetch('/api/v1/policies');
+  if (!response.ok) {
+    throw new Error('Failed to load system security and user policies.');
+  }
+  return response.json();
 }
 
 export async function startDemo() {
@@ -47,14 +55,14 @@ export async function startDemo() {
   };
 }
 
-export async function updatePassword(accessToken, password) {
+export async function updatePassword(accessToken, password, agreeToTerms) {
   const response = await fetch('/api/v1/auth/change-password', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`
     },
-    body: JSON.stringify({ password })
+    body: JSON.stringify({ password, agreeToTerms })
   });
   const session = await response.json().catch(() => ({}));
   if (!response.ok) {
