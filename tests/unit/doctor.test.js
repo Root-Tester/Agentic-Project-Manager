@@ -11,7 +11,7 @@ function runDoctor(values) {
   return spawnSync(process.execPath, [doctorPath], {
     cwd: projectRoot,
     encoding: 'utf8',
-    env: { ...process.env, ...values }
+    env: { ...process.env, DOTENV_LOAD: 'false', APM_DATABASE_PATH: '', ...values }
   });
 }
 

@@ -7,6 +7,30 @@ import { ApiError } from './errors.js';
 import { createTenantRouter } from './routes/tenants.js';
 import { createPlatformRouter } from './routes/platform.js';
 
+export function isOriginAllowed(origin, corsOrigins = []) {
+  if (!origin) return true;
+  if (Array.isArray(corsOrigins) && corsOrigins.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
+      /^192\.168\.\d+\.\d+$/.test(host) ||
+      /^10\.\d+\.\d+\.\d+$/.test(host) ||
+      /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host) ||
+      host === 'agentic-project-manager.onrender.com' ||
+      host.endsWith('.onrender.com')
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 export function createApiApp({
   config,
   repository,
@@ -50,7 +74,7 @@ export function createApiApp({
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     );
     const origin = req.headers.origin;
-    if (origin && !config.corsOrigins.includes(origin)) {
+    if (origin && !isOriginAllowed(origin, config.corsOrigins)) {
       next(new ApiError(403, 'Origin is not allowed.'));
       return;
     }

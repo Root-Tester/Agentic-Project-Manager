@@ -11,11 +11,7 @@ export default defineConfig({
     port: Number(process.env.PORT) || 3000,
     strictPort: true,
 
-    allowedHosts: [
-      'agentic-project-manager.onrender.com',
-      'localhost',
-      '127.0.0.1'
-    ],
+    allowedHosts: true,
 
     proxy: {
       '/api': {

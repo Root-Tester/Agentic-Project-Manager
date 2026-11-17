@@ -4,9 +4,11 @@ import dotenv from 'dotenv';
 import { loadBackendConfig } from '../backend/src/config/env.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dotenvResult = dotenv.config({ path: path.join(projectRoot, '.env') });
-if (dotenvResult.error && dotenvResult.error.code !== 'ENOENT') {
-  throw dotenvResult.error;
+if (process.env.DOTENV_LOAD !== 'false') {
+  const dotenvResult = dotenv.config({ path: path.join(projectRoot, '.env') });
+  if (dotenvResult.error && dotenvResult.error.code !== 'ENOENT') {
+    throw dotenvResult.error;
+  }
 }
 
 let ready = false;

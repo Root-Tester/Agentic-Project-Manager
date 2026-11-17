@@ -17,8 +17,11 @@ export API_PROXY_TARGET="http://127.0.0.1:4000"
 # Start backend privately
 echo "[1/2] Starting backend on 127.0.0.1:4000..."
 
-PORT=4000 HOST=127.0.0.1 npm run dev &
+API_PORT=4000 PORT=4000 HOST=127.0.0.1 npm run dev &
 BACKEND_PID=$!
+
+# Wait for backend to initialize
+sleep 2
 
 # Start frontend publicly
 echo "[2/2] Starting frontend on 0.0.0.0:${PORT}..."

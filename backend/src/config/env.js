@@ -23,7 +23,7 @@ function assertHttpUrl(value, name) {
 
 export function loadBackendConfig(env = process.env) {
   const nodeEnv = (env.NODE_ENV || 'development').toLowerCase();
-  const rawPort = env.API_PORT || '4000';
+  const rawPort = env.PORT || env.API_PORT || '4000';
   const port = Number(rawPort);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error('API_PORT must be an integer between 1 and 65535.');
@@ -47,27 +47,33 @@ export function loadBackendConfig(env = process.env) {
     .map(origin => origin.trim())
     .filter(Boolean)
     .map(origin => assertHttpUrl(origin, 'CORS_ORIGINS entry'));
-  const platformAdminEmails = [...new Set(
+  const platformAdminEmails = [
+  ...new Set(
     (env.APM_PLATFORM_ADMIN_EMAILS || '')
       .split(',')
       .map(email => email.trim().toLowerCase())
       .filter(Boolean)
-  )];
+  )
+];
   if (platformAdminEmails.some(email =>
     email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
   )) {
     throw new Error('APM_PLATFORM_ADMIN_EMAILS must be a comma-separated list of valid email addresses.');
   }
 
-  return {
-    port,
-    databasePath: env.APM_DATABASE_PATH?.trim() || '.data/agentic-project-manager.sqlite',
-    storageLimitBytes,
-    issuer: 'agentic-project-manager',
-    audience: 'agentic-project-manager-web',
-    jwtSecret,
-    platformAdminEmails,
-    corsOrigins: [...new Set(corsOrigins)],
-    nodeEnv
-  };
+ return {
+  port,
+  databasePath:
+    env.APM_DATABASE_PATH?.trim() ||
+    '.data/agentic-project-manager.sqlite',
+  storageLimitBytes,
+  issuer: 'agentic-project-manager',
+  audience: 'agentic-project-manager-web',
+  jwtSecret,
+  platformAdminEmails,
+  corsOrigins: [...new Set(corsOrigins)],
+  nodeEnv
+};
+
+
 }

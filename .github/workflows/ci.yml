@@ -26,7 +26,6 @@ jobs:
 
       - name: Run tests
         run: npm run test
-        continue-on-error: true
 
       - name: Build release templates
         run: npm run build
