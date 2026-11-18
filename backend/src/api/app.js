@@ -109,7 +109,10 @@ export function createApiApp({
           next(new ApiError(400, 'You must accept the Terms of Service, User Policy, and Security Policy to continue.'));
           return;
         }
-        const session = await accountAuth.registerPlatformAdmin(req.body);
+        const hasCompany = Boolean(req.body?.companyName || (req.body?.companyType && req.body?.name));
+        const session = hasCompany
+          ? await accountAuth.registerCompany(req.body)
+          : await accountAuth.registerPlatformAdmin(req.body);
         res.setHeader('Cache-Control', 'no-store');
         res.status(201).json(session);
       } catch (error) {
@@ -117,7 +120,7 @@ export function createApiApp({
           error.message.startsWith('This email is not authorized')) {
           next(new ApiError(403, error.message));
         } else if (error instanceof Error &&
-          /^(Enter a valid|Display name|Password)/.test(error.message)) {
+          /^(Enter a valid|Display name|Password|Company name|Choose a supported company type|Company website)/.test(error.message)) {
           next(new ApiError(400, error.message));
         } else if (error?.code === 'ERR_SQLITE_CONSTRAINT_UNIQUE' ||
           error?.code === 'SQLITE_CONSTRAINT_UNIQUE') {

@@ -141,7 +141,7 @@ const SCHEMA_V2 = `
     verification_status TEXT NOT NULL DEFAULT 'pending'
       CHECK (verification_status IN ('pending', 'verified', 'rejected')),
     access_role TEXT NOT NULL DEFAULT 'employee'
-      CHECK (access_role IN ('employee', 'hr', 'hr-manager', 'manager', 'team-leader')),
+      CHECK (access_role IN ('employee', 'hr', 'hr-manager', 'manager', 'team-leader', 'managing-director', 'founder', 'board-member', 'shareholder')),
     manager_subject TEXT REFERENCES users(subject) ON DELETE SET NULL,
     created_by TEXT NOT NULL REFERENCES users(subject),
     verified_by TEXT REFERENCES users(subject) ON DELETE SET NULL,

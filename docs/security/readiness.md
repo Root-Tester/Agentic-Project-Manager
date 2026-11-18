@@ -20,20 +20,29 @@ review.
 
 - **Passwords and sessions:** account passwords are validated for length and
   stored as salted `bcrypt` hashes (cost factor 12) with backward compatibility
-  for legacy `scrypt` hashes. Authentication uses signed HS256 JWT bearer
-  tokens with issuer, audience, and expiry validation. Tokens expire after two
-  hours. Newly provisioned owner and employee accounts receive a temporary
-  password and must change it before accessing tenant data. Terms of Service,
-  Privacy Policy, and Security Policy acceptance is recorded upon setup and
-  first login. The frontend keeps access tokens in memory rather than
-  persistent browser storage.
+  for legacy `scrypt` hashes. Authentication uses unique session IDs and signed
+  HS256 JWT bearer tokens with issuer, audience, and expiry validation. Session
+  validity is 12 hours for standard members and at least 18 hours for CEO,
+  executive, and owner accounts. Active sessions persist across page refreshes
+  until voluntary sign-out or session expiration, at which point the client
+  automatically logs out and refreshes the application. Newly provisioned owner
+  and employee accounts receive a temporary password and must change it before
+  accessing tenant data. Terms of Service, Privacy Policy, and Security Policy
+  acceptance is recorded upon setup and first login.
 - **Data encryption and secret handling:** sensitive user payloads, request
   tokens, and secret values are protected using authenticated AES-256-GCM
   encryption with distinct 96-bit IVs and 128-bit authentication tags.
-- **Account provisioning:** platform-administrator setup is restricted to the
-  server-side `APM_PLATFORM_ADMIN_EMAILS` allowlist. Company HR provisions
-  employees; an HR manager or company administrator verifies pending hires.
-  Until verification, the new employee has no active company membership.
+- **Account provisioning and lifecycle:** organizations and teams register through
+  self-service company creation where the registering user becomes the initial owner.
+  Team members do not need to self-register; company owners and administrators
+  add team members directly or via verified spreadsheet import (Excel .xlsx / CSV)
+  with an interactive online review and verification table. The platform generates
+  secure login credentials (login ID and temporary password) requiring a mandatory
+  password change upon first login. Administrators and HR can reset/recover lost
+  initial passwords. When employees leave or are fired, authorized administrators,
+  HR, and hiring managers can access their active task list for work handover and
+  reassignment, and delete the account once task handouts are complete.
+  Tenant boundaries and multiple role-based access levels enforce least privilege.
 - **Authorization and separation:** the API authenticates protected requests
   and checks the user's active membership, organization role, and applicable
   capabilities. Company and workspace queries include the tenant boundary.

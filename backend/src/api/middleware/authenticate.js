@@ -38,6 +38,8 @@ export function createAuthenticationMiddleware({
         subject: claims.sub,
         email: claims.email,
         name: claims.name || claims.preferred_username || claims.email || claims.sub,
+        sessionId: claims.sessionId || claims.session_id || claims.jti || '',
+        session_id: claims.session_id || claims.sessionId || claims.jti || '',
         mustChangePassword: Boolean(claims.mustChangePassword),
         platformAdmin: Boolean(claims.platformAdmin),
         demoReadOnly: Boolean(claims.demoReadOnly)

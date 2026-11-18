@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import { Router } from 'express';
 import { calculateCapacityForecast } from '../../../../shared/analytics/capacity-forecast.js';
 import { RESPONSIBILITY_PROFILES } from '../../../../shared/access/capabilities.js';
@@ -87,7 +88,7 @@ async function assertConversation(repository, tenantId, workspaceId, conversatio
   }
 }
 
-export function createTeamRouter(repository) {
+export function createTeamRouter(repository, { accountAuth } = {}) {
   const router = Router({ mergeParams: true });
 
   router.get(
@@ -110,9 +111,21 @@ export function createTeamRouter(repository) {
     createTenantAccessMiddleware(repository, { admin: true }),
     async (req, res) => {
       const member = validateMemberInput(req.body, { allowOwner: req.tenant.role === 'owner' });
-      const account = await repository.findAccountIdentityByEmail(member.email);
-      if (!account || account.status !== 'active') {
-        throw new ApiError(404, 'Register this account before adding it to the team.');
+      let account = await repository.findAccountIdentityByEmail(member.email);
+      let temporaryPassword = '';
+      if (!account) {
+        temporaryPassword = randomBytes(18).toString('base64url');
+        const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+        account = await repository.createPlatformAdminAccount({
+          email: member.email,
+          displayName: member.displayName,
+          passwordHash,
+          termsAcceptedAt: ''
+        });
+        // Set must_change_password flag for newly created user
+        repository.database.prepare(
+          'UPDATE users SET must_change_password = 1 WHERE subject = ?'
+        ).run(account.subject);
       }
       member.subject = account.subject;
       const existing = await repository.getMembership(req.tenant.id, member.subject);
@@ -126,7 +139,12 @@ export function createTeamRouter(repository) {
         targetId: member.subject,
         details: { role: member.role, capabilityProfile: member.capabilityProfile }
       });
-      res.status(201).json({ member: toMemberView(saved) });
+      res.status(201).json({
+        member: toMemberView(saved),
+        credentials: temporaryPassword
+          ? { email: member.email, temporaryPassword }
+          : undefined
+      });
     }
   );
 

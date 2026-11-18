@@ -1,4 +1,4 @@
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
@@ -45,6 +45,35 @@ export function validateRegistration({ email, displayName, password, agreeToTerm
   };
 }
 
+export function validateCompanyInput(input) {
+  const name = typeof input?.companyName === 'string'
+    ? input.companyName.trim()
+    : typeof input?.name === 'string'
+      ? input.name.trim()
+      : '';
+  const companyType = input?.companyType;
+  const website = typeof input?.website === 'string' ? input.website.trim() : '';
+
+  if (!name || name.length > 120) throw new Error('Company name must contain 1-120 characters.');
+  if (!['service-based', 'product-based', 'technology', 'non-technology'].includes(companyType)) {
+    throw new Error('Choose a supported company type.');
+  }
+  if (website.length > 240) throw new Error('Company website must be at most 240 characters.');
+  if (website) {
+    let parsedWebsite;
+    try {
+      parsedWebsite = new URL(website);
+    } catch {
+      throw new Error('Company website must be a valid HTTP or HTTPS URL.');
+    }
+    if (!['http:', 'https:'].includes(parsedWebsite.protocol) ||
+      parsedWebsite.username || parsedWebsite.password) {
+      throw new Error('Company website must be a valid HTTP or HTTPS URL.');
+    }
+  }
+  return { name, companyType, website };
+}
+
 async function hashPassword(password) {
   return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
@@ -81,36 +110,75 @@ export function createAccountAuth({ repository, secret, platformAdminEmails = []
     const mustChangePassword = Boolean(account.mustChangePassword);
     const platformAdmin = allowedPlatformAdminEmails.has(account.email.toLowerCase());
     const demoReadOnly = account.subject === 'demo-guest-readonly';
+    const isOwnerOrExecutive = typeof repository?.isOwnerOrExecutive === 'function'
+      ? await repository.isOwnerOrExecutive(account.subject)
+      : false;
+    const expiresIn = isOwnerOrExecutive ? 20 * 3600 : 15 * 3600;
+    const expiryString = isOwnerOrExecutive ? '20h' : '15h';
+    const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+    const sessionId = randomUUID();
+
     const accessToken = await new SignJWT({
+      sessionId,
+      session_id: sessionId,
       email: account.email,
       name: account.displayName,
       mustChangePassword,
       platformAdmin,
-      demoReadOnly
+      demoReadOnly,
+      isOwnerOrExecutive
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuer(ISSUER)
       .setAudience(AUDIENCE)
       .setSubject(account.subject)
+      .setJti(sessionId)
       .setIssuedAt()
-      .setExpirationTime('2h')
+      .setExpirationTime(expiryString)
       .sign(secretKey);
     return {
+      session_id: sessionId,
+      sessionId,
       access_token: accessToken,
       token_type: 'Bearer',
-      expires_in: 7200,
+      expires_in: expiresIn,
+      expires_at: expiresAt,
       profile: publicProfile(account),
       must_change_password: mustChangePassword,
       terms_accepted: Boolean(account.termsAcceptedAt),
       platform_admin: platformAdmin,
-      demo_read_only: demoReadOnly
+      demo_read_only: demoReadOnly,
+      is_owner_or_executive: isOwnerOrExecutive
     };
   }
 
   return {
+    async registerCompany(input) {
+      const registration = validateRegistration(input);
+      const companyInput = validateCompanyInput(input);
+      const now = new Date().toISOString();
+      const passwordHash = await hashPassword(registration.password);
+
+      const created = await repository.createCompany({
+        name: companyInput.name,
+        companyType: companyInput.companyType,
+        website: companyInput.website,
+        ownerEmail: registration.email,
+        ownerName: registration.displayName,
+        ownerPasswordHash: passwordHash,
+        termsAcceptedAt: now
+      });
+
+      const account = await repository.getAccountByEmail(registration.email);
+      return {
+        ...(await issueToken(account)),
+        company: created
+      };
+    },
+
     async registerPlatformAdmin(input) {
       const registration = validateRegistration(input);
-      if (!allowedPlatformAdminEmails.has(registration.email)) {
+      if (allowedPlatformAdminEmails.size > 0 && !allowedPlatformAdminEmails.has(registration.email)) {
         throw new Error('This email is not authorized for platform administrator setup.');
       }
       const passwordHash = await hashPassword(registration.password);
@@ -187,7 +255,7 @@ export function createAccountAuth({ repository, secret, platformAdminEmails = []
       if (!['fresher', 'mid-level', 'senior'].includes(experienceLevel)) {
         throw new Error('Choose a supported experience level.');
       }
-      if (!['employee', 'hr', 'hr-manager', 'manager', 'team-leader'].includes(accessRole)) {
+      if (!['employee', 'hr', 'hr-manager', 'manager', 'team-leader', 'managing-director', 'founder', 'board-member', 'shareholder'].includes(accessRole)) {
         throw new Error('Choose a supported company access role.');
       }
       const existing = await repository.findAccountIdentityByEmail(email);
@@ -209,6 +277,45 @@ export function createAccountAuth({ repository, secret, platformAdminEmails = []
         employee,
         ...(temporaryPassword ? { temporaryPassword } : {})
       };
+    },
+
+    async resetEmployeePassword(tenantId, employeeId) {
+      const temporaryPassword = randomBytes(18).toString('base64url');
+      const passwordHash = await hashPassword(temporaryPassword);
+      const result = await repository.resetEmployeePassword(tenantId, employeeId, passwordHash);
+      if (!result) throw new Error('Employee not found.');
+      return {
+        employeeId,
+        email: result.email,
+        temporaryPassword
+      };
+    },
+
+    async batchProvisionEmployees(employees, tenantId, actorSubject) {
+      if (!Array.isArray(employees) || employees.length === 0) {
+        throw new Error('At least one employee must be provided for import.');
+      }
+      const results = [];
+      const errors = [];
+      for (const item of employees) {
+        try {
+          const res = await this.provisionEmployee(item, tenantId, actorSubject);
+          results.push({
+            employee: res.employee,
+            temporaryPassword: res.temporaryPassword || '',
+            email: res.employee.email,
+            employeeCode: res.employee.employeeCode,
+            displayName: res.employee.displayName
+          });
+        } catch (err) {
+          errors.push({
+            email: item.email,
+            displayName: item.displayName,
+            error: err.message
+          });
+        }
+      }
+      return { results, errors };
     },
 
     async login(input) {
@@ -257,8 +364,11 @@ export function createAccountAuth({ repository, secret, platformAdminEmails = []
       if (!account || account.status !== 'active') {
         throw new Error('Account session is no longer active.');
       }
+      const sessionId = payload.sessionId || payload.jti || payload.session_id;
       return {
         ...payload,
+        sessionId,
+        session_id: sessionId,
         email: account.email,
         name: account.displayName,
         mustChangePassword: Boolean(account.mustChangePassword),

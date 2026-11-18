@@ -123,12 +123,24 @@ CLI entry -> command adapter -> task/release services
 - `backend/src/api/` is the hosted REST backend. `frontend/` is a separately
   built React/Vite app; `cli/src/web/` is the local compatibility UI. Neither
   frontend receives database credentials or the JWT signing secret.
-- Public individual signup is disabled. A server-side email allowlist controls
-  platform administrator bootstrap; those administrators create company
-  profiles and their first owner. HR provisions employee accounts with a
-  one-time temporary password; HR managers verify pending hires before company
-  access is activated. Signed bearer JWTs are kept in frontend memory and are
-  not an encryption or transport-security mechanism.
+- Open self-service registration allows users to directly register their
+  companies and teams and become the initial owner. Team members are not
+  required to register themselves on the platform; company owners and managers
+  add team members directly, and the platform automatically generates credentials
+  (login ID and secure password) for them. Multiple role-based access levels
+  (`owner`, `admin`, `editor`, `viewer`, plus fine-grained capability profiles)
+  enforce tenant boundaries and responsibilities. Sessions use platform-generated
+  session IDs valid for 12 hours (standard users) or 18 hours (CEO, executive,
+  and owner accounts), preserved across page refreshes until voluntary logout or
+  automatic expiration. Every user with a platform-generated password must set a
+  new private password upon first login. Administrators, HR, and owners can
+  recover/reset lost initial passwords, access departing/fired employee accounts
+  for task handover and reassignment, and permanently delete accounts once work
+  handouts are complete. The platform supports uploading Excel (.xlsx) and CSV
+  spreadsheets with automated normalization and an online interactive inspection
+  sheet where responsible persons can edit, add, or delete entries, and verify
+  the full document before batch provisioning accounts and credentials. Signed
+  bearer JWTs are authenticated server-side.
 - `shared/organization/job-catalog.js` provides company-type-specific job title
   and department choices. Company employee access, verification, team
   assignment, and organization progress routes live under the tenant API and

@@ -276,7 +276,7 @@ export function createTenantRouter(repository, { accountAuth } = {}) {
     }
   );
 
-  tenantRouter.use(createTeamRouter(repository));
+  tenantRouter.use(createTeamRouter(repository, { accountAuth }));
   router.use('/:tenantId', tenantRouter);
   return router;
 }

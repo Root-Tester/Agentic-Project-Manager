@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../api/client.js';
-import { fetchPolicies, registerPlatformAdmin, signIn, startDemo, updatePassword } from '../auth.js';
+import { clearStoredSession, fetchPolicies, getStoredSession, registerCompany, registerPlatformAdmin, signIn, startDemo, updatePassword, updateStoredSession } from '../auth.js';
 import { normalizeTaskStatuses, TASK_STATUSES } from '../../../shared/schemas/tasks.js';
 import { RESPONSIBILITY_PROFILES } from '../../../shared/access/capabilities.js';
 import { COMPANY_TYPES } from '../../../shared/organization/job-catalog.js';
@@ -51,11 +51,14 @@ function PolicyModal({ type, policies, onClose }) {
 }
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => getStoredSession());
   const [authMode, setAuthMode] = useState('landing');
   const [authEmail, setAuthEmail] = useState('');
   const [authName, setAuthName] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authCompanyName, setAuthCompanyName] = useState('');
+  const [authCompanyType, setAuthCompanyType] = useState('technology');
+  const [authWebsite, setAuthWebsite] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [activePolicyModal, setActivePolicyModal] = useState(null);
@@ -64,10 +67,23 @@ export default function App() {
     name: '', companyType: 'technology', website: '', ownerName: '', ownerEmail: ''
   });
   const [ownerCredentials, setOwnerCredentials] = useState(null);
-  const [tenants, setTenants] = useState([]);
-  const [tenantId, setTenantId] = useState('');
-  const [workspaces, setWorkspaces] = useState([]);
-  const [workspaceId, setWorkspaceId] = useState('');
+  const [tenants, setTenants] = useState(() => {
+    const s = getStoredSession();
+    return Array.isArray(s?.tenants) ? s.tenants : [];
+  });
+  const [tenantId, setTenantId] = useState(() => {
+    const s = getStoredSession();
+    return s?.tenantId || s?.tenants?.[0]?.tenantId || '';
+  });
+  const [initialLoading, setInitialLoading] = useState(() => Boolean(getStoredSession()?.access_token && !getStoredSession()?.tenants?.length));
+  const [workspaces, setWorkspaces] = useState(() => {
+    const s = getStoredSession();
+    return Array.isArray(s?.workspaces) ? s.workspaces : [];
+  });
+  const [workspaceId, setWorkspaceId] = useState(() => {
+    const s = getStoredSession();
+    return s?.workspaceId || '';
+  });
   const [documents, setDocuments] = useState(EMPTY_DOCUMENTS);
   const [editors, setEditors] = useState({ milestone: '', employees: '[]', tasks: '{\n  "tasks": []\n}' });
   const [workspaceName, setWorkspaceName] = useState('');
@@ -92,7 +108,7 @@ export default function App() {
   const can = capability => access?.capabilities?.includes('*') ||
     access?.capabilities?.includes(capability);
   const canViewOrganizationOverview = ['owner', 'admin'].includes(access?.role) ||
-    ['hr-manager', 'manager', 'team-leader', 'demo-readonly'].includes(access?.capabilityProfile);
+    ['hr-manager', 'manager', 'team-leader', 'executive', 'managing-director', 'founder', 'board-member', 'shareholder', 'demo-readonly'].includes(access?.capabilityProfile);
   const providerOptions = useMemo(() => providers.some(item => item.id === 'gemini')
     ? providers
     : [{ id: 'gemini', name: 'Google Gemini' }, ...providers], [providers]);
@@ -111,12 +127,52 @@ export default function App() {
   ];
 
   const loadTenants = useCallback(async activeUser => {
-    const result = await apiRequest('/tenants', activeUser.access_token);
-    setTenants(result.tenants);
-    setTenantId(current => result.tenants.some(item => item.tenantId === current)
-      ? current
-      : result.tenants[0]?.tenantId || '');
+    try {
+      const result = await apiRequest('/tenants', activeUser.access_token);
+      setTenants(result.tenants);
+      setTenantId(current => {
+        const nextId = result.tenants.some(item => item.tenantId === current)
+          ? current
+          : result.tenants[0]?.tenantId || '';
+        updateStoredSession({ tenants: result.tenants, tenantId: nextId });
+        return nextId;
+      });
+    } finally {
+      setInitialLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    if (user && !user.must_change_password) {
+      loadTenants(user).catch(cause => {
+        if (cause?.message && (cause.message.includes('Account session is no longer active') || cause.message.includes('expired'))) {
+          clearStoredSession();
+          setUser(null);
+          window.location.reload();
+        } else {
+          setError(cause.message);
+        }
+      });
+    }
+  }, [user, loadTenants]);
+
+  useEffect(() => {
+    if (!user || !user.expires_at) return;
+    const expiresMs = new Date(user.expires_at).getTime() - Date.now();
+    if (expiresMs <= 0) {
+      clearStoredSession();
+      setUser(null);
+      window.location.reload();
+      return;
+    }
+    const timer = setTimeout(() => {
+      clearStoredSession();
+      setUser(null);
+      window.location.reload();
+    }, expiresMs);
+
+    return () => clearTimeout(timer);
+  }, [user]);
 
   useEffect(() => {
     if (!user || !tenantId) {
@@ -454,10 +510,13 @@ export default function App() {
     setError('');
     try {
       const session = authMode === 'register'
-        ? await registerPlatformAdmin({
+        ? await registerCompany({
           email: authEmail,
           displayName: authName,
           password: authPassword,
+          companyName: authCompanyName,
+          companyType: authCompanyType,
+          website: authWebsite,
           agreeToTerms
         })
         : await signIn(authEmail, authPassword);
@@ -523,6 +582,7 @@ export default function App() {
   }
 
   function signOut() {
+    clearStoredSession();
     setUser(null);
     setTenants([]);
     setTenantId('');
@@ -577,15 +637,15 @@ export default function App() {
         <section className="landing-section how-to">
           <header><p className="eyebrow">GETTING STARTED</p><h2>How to use the workspace</h2></header>
           <ol>
-            <li><strong>Company setup</strong><span>A platform administrator creates the company and its first owner. Company staff do not create personal workspaces.</span></li>
-            <li><strong>People and teams</strong><span>HR adds a hire and shares the one-time password securely. The employee changes it at first sign-in; an HR manager verifies and assigns the employee.</span></li>
+            <li><strong>Register company/team</strong><span>Any organization owner can register their company and set up the team workspace directly.</span></li>
+            <li><strong>Add team members</strong><span>Company owners/managers add members directly with platform-generated credentials. Team members don't need to self-register.</span></li>
             <li><strong>Plan the project</strong><span>Open a workspace, enter milestone and project details, maintain the team roster, then add tasks or generate a task draft with a configured AI provider.</span></li>
             <li><strong>Track and collaborate</strong><span>Update task statuses as work moves through development, testing, debugging, and review. Use Overview and Discussions to follow progress and resolve questions.</span></li>
           </ol>
         </section>
         <footer className="landing-footer">
           <div>
-            <span>Company access is provisioned by an administrator; public individual registration is disabled.</span>
+            <span>Team members log in using company-provided credentials.</span>
             <div className="landing-legal-links" style={{ marginTop: '8px' }}>
               <button type="button" className="text-link" onClick={() => openPolicy('terms')}>Terms of Service</button>
               <span>·</span>
@@ -594,7 +654,7 @@ export default function App() {
               <button type="button" className="text-link" onClick={() => openPolicy('security')}>Security Policy</button>
             </div>
           </div>
-          <button className="text-button" onClick={() => { setAuthMode('register'); setError(''); setAgreeToTerms(false); }}>Platform administrator setup</button>
+          <button className="text-button" onClick={() => { setAuthMode('register'); setError(''); setAgreeToTerms(false); }}>Register company / team</button>
         </footer>
         <PolicyModal type={activePolicyModal} policies={policies} onClose={() => setActivePolicyModal(null)} />
       </main>
@@ -606,23 +666,38 @@ export default function App() {
       <main className="auth-page">
         <section className="panel auth-panel">
           <button className="text-button" onClick={() => { setAuthMode('landing'); setError(''); }}>← Back to overview</button>
-          <p className="eyebrow">{authMode === 'register' ? 'PLATFORM ADMINISTRATOR' : 'COMPANY WORKSPACE'}</p>
-          <h1>{authMode === 'register' ? 'Set up an administrator account' : 'Sign in to your company'}</h1>
+          <p className="eyebrow">{authMode === 'register' ? 'REGISTER COMPANY & TEAM' : 'COMPANY WORKSPACE'}</p>
+          <h1>{authMode === 'register' ? 'Register your company or team' : 'Sign in to your company'}</h1>
           <p>{authMode === 'register'
-            ? 'Administrator setup is restricted to email addresses configured by the service operator.'
-            : 'Use the company account and temporary or permanent password provided by your administrator.'}</p>
+            ? 'Set up your company workspace and become the owner. You can then add team members with platform-generated credentials.'
+            : 'Use the company account or platform-generated login credentials provided by your company.'}</p>
           {error && <p className="error" role="alert">{error}</p>}
           <form className="auth-form" onSubmit={submitAccount}>
-            {authMode === 'register' && <label>Display name
-              <input autoComplete="name" value={authName} onChange={event => setAuthName(event.target.value)} maxLength={120} required />
-            </label>}
-            <label>Email
+            {authMode === 'register' && (
+              <>
+                <label>Company / Team name
+                  <input value={authCompanyName} onChange={event => setAuthCompanyName(event.target.value)} maxLength={120} required />
+                </label>
+                <label>Company type
+                  <select value={authCompanyType} onChange={event => setAuthCompanyType(event.target.value)}>
+                    {COMPANY_TYPES.map(type => <option key={type.id} value={type.id}>{type.label}</option>)}
+                  </select>
+                </label>
+                <label>Website (optional)
+                  <input type="url" value={authWebsite} onChange={event => setAuthWebsite(event.target.value)} maxLength={240} />
+                </label>
+                <label>Owner display name
+                  <input autoComplete="name" value={authName} onChange={event => setAuthName(event.target.value)} maxLength={120} required />
+                </label>
+              </>
+            )}
+            <label>{authMode === 'register' ? 'Owner email' : 'Email / Login ID'}
               <input type="email" autoComplete="email" value={authEmail} onChange={event => setAuthEmail(event.target.value)} maxLength={254} required />
             </label>
             <label>Password
               <input type="password" autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} value={authPassword} onChange={event => setAuthPassword(event.target.value)} minLength={authMode === 'register' ? 12 : 1} maxLength={128} required />
             </label>
-            {authMode === 'register' && <p className="feature-note">Use at least 12 characters. Administrator emails are configured only in the backend environment.</p>}
+            {authMode === 'register' && <p className="feature-note">Use at least 12 characters for a secure owner password.</p>}
             {authMode === 'register' && (
               <label className="policy-checkbox">
                 <input
@@ -639,10 +714,13 @@ export default function App() {
                 </span>
               </label>
             )}
-            <button disabled={busy || (authMode === 'register' && !agreeToTerms)}>{busy ? 'Please wait…' : authMode === 'register' ? 'Create administrator account' : 'Sign in'}</button>
+            <button disabled={busy || (authMode === 'register' && !agreeToTerms)}>{busy ? 'Please wait…' : authMode === 'register' ? 'Register company & owner' : 'Sign in'}</button>
           </form>
-          {authMode === 'login' && <p className="auth-switch">Platform administrator?{' '}
-            <button className="text-button" type="button" onClick={() => { setAuthMode('register'); setError(''); setAgreeToTerms(false); }}>Create administrator account</button>
+          {authMode === 'login' && <p className="auth-switch">Need to register a company?{' '}
+            <button className="text-button" type="button" onClick={() => { setAuthMode('register'); setError(''); setAgreeToTerms(false); }}>Register company / team</button>
+          </p>}
+          {authMode === 'register' && <p className="auth-switch">Already registered?{' '}
+            <button className="text-button" type="button" onClick={() => { setAuthMode('login'); setError(''); }}>Sign in</button>
           </p>}
         </section>
         <PolicyModal type={activePolicyModal} policies={policies} onClose={() => setActivePolicyModal(null)} />
@@ -708,6 +786,18 @@ export default function App() {
             <label>First owner email<input type="email" value={companyForm.ownerEmail} onChange={event => setCompanyForm(current => ({ ...current, ownerEmail: event.target.value }))} maxLength={254} required /></label>
             <button disabled={busy}>{busy ? 'Creating company…' : 'Create company and owner'}</button>
           </form>
+        </section>
+      </main>
+    );
+  }
+
+  if (initialLoading && tenants.length === 0) {
+    return (
+      <main className="auth-page">
+        <section className="panel auth-panel">
+          <p className="eyebrow">WORKSPACE SESSION</p>
+          <h1>Restoring your active session…</h1>
+          <p>Connecting to company workspaces and verifying authorization.</p>
         </section>
       </main>
     );

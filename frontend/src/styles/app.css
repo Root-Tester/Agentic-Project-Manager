@@ -328,3 +328,21 @@ label { color: #5f554a; }
 .policy-modal-content p { margin-bottom: 12px; }
 .policy-modal-footer { display: flex; justify-content: flex-end; padding: 16px 24px; border-top: 1px solid #e9e1d6; background: #faf5ee; }
 
+/* Interactive Excel / CSV sheet table & Task handover */
+.sheet-preview-container { margin: 16px 0; overflow-x: auto; background: #0d1524; border: 1px solid #29364d; border-radius: 10px; padding: 12px; }
+.sheet-preview-table { width: 100%; border-collapse: collapse; min-width: 850px; }
+.sheet-preview-table th { background: #1c273c; color: #c5c6ff; text-align: left; padding: 10px; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #29364d; }
+.sheet-preview-table td { padding: 6px 8px; border-bottom: 1px solid #202d42; }
+.sheet-preview-table input, .sheet-preview-table select { min-width: 0; width: 100%; padding: 6px 8px; font-size: 0.85rem; }
+.sheet-preview-table button.danger-button { background: #882222; padding: 6px 10px; font-size: 0.8rem; }
+.sheet-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.handover-modal { max-width: 800px; width: 100%; background: #141d2e; border: 1px solid #29364d; border-radius: 14px; padding: 24px; color: #ecf1f8; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5); }
+.handover-modal header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #29364d; padding-bottom: 12px; }
+.handover-task-list { list-style: none; margin: 12px 0; padding: 0; max-height: 250px; overflow-y: auto; display: grid; gap: 8px; }
+.handover-task-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #0d1524; border: 1px solid #29364d; border-radius: 6px; }
+.badge-danger { background: #661818; color: #ff9999; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; }
+.credentials-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85rem; }
+.credentials-table th, .credentials-table td { padding: 6px 10px; border-bottom: 1px solid #334466; text-align: left; }
+.credentials-table code { background: #111a2e; padding: 2px 6px; border-radius: 4px; color: #80ffa0; }
+
+

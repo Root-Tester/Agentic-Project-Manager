@@ -30,15 +30,39 @@ export const RESPONSIBILITY_PROFILES = {
     label: 'Executive / CEO',
     capabilities: [
       'workspace:read', 'tasks:read', 'people:read', 'members:read',
-      'discussions:read', 'direct-messages:read', 'audit:read', 'kpi:read'
+      'discussions:read', 'direct-messages:read', 'audit:read', 'kpi:read',
+      'system:read', 'database:read'
     ]
   },
-  hr: {
-    label: 'Human resources',
+  'managing-director': {
+    label: 'Managing director',
     capabilities: [
-      'workspace:read', 'tasks:read', 'people:read', 'people:write',
-      'members:read', 'discussions:read', 'discussions:write',
-      'direct-messages:read', 'direct-messages:write', 'kpi:read'
+      'workspace:read', 'tasks:read', 'people:read', 'members:read',
+      'discussions:read', 'direct-messages:read', 'audit:read', 'kpi:read',
+      'system:read', 'database:read'
+    ]
+  },
+  founder: {
+    label: 'Founder / Co-founder',
+    capabilities: [
+      'workspace:read', 'tasks:read', 'people:read', 'members:read',
+      'discussions:read', 'direct-messages:read', 'audit:read', 'kpi:read',
+      'system:read', 'database:read'
+    ]
+  },
+  'board-member': {
+    label: 'Board member / Advisory',
+    capabilities: [
+      'workspace:read', 'tasks:read', 'people:read', 'members:read',
+      'discussions:read', 'audit:read', 'kpi:read',
+      'system:read', 'database:read'
+    ]
+  },
+  shareholder: {
+    label: 'Shareholder / Investor',
+    capabilities: [
+      'workspace:read', 'tasks:read', 'people:read', 'members:read',
+      'discussions:read', 'audit:read', 'kpi:read'
     ]
   },
   'backend-developer': {

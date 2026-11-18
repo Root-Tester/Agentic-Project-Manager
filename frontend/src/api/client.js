@@ -11,7 +11,9 @@ export async function apiRequest(path, accessToken, options = {}) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `API request failed (${response.status}).`);
+    const error = new Error(body.error || `API request failed (${response.status}).`);
+    error.status = response.status;
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }
@@ -23,7 +25,9 @@ export async function apiStream(path, accessToken, { signal } = {}) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `API request failed (${response.status}).`);
+    const error = new Error(body.error || `API request failed (${response.status}).`);
+    error.status = response.status;
+    throw error;
   }
   if (!response.body) throw new Error('The server did not provide a live update stream.');
   return response.body;

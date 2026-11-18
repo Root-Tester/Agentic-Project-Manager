@@ -4,10 +4,11 @@ import rateLimit from 'express-rate-limit';
 import { COMPANY_ACCESS_ROLES, getJobCatalog } from '../../../../shared/organization/job-catalog.js';
 import { ApiError } from '../errors.js';
 import { createTenantAccessMiddleware } from '../middleware/tenant-access.js';
+import { parseSpreadsheet } from '../../services/sheet-parser.js';
 
 const TEAM_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$/;
 const EXPERIENCE_LEVELS = new Set(['fresher', 'mid-level', 'senior']);
-const EMPLOYMENT_STATUSES = new Set(['working', 'on-leave', 'retired', 'fired']);
+const EMPLOYMENT_STATUSES = new Set(['working', 'on-leave', 'retired', 'fired', 'departed', 'settled']);
 const ACCESS_ROLES = new Set(COMPANY_ACCESS_ROLES.map(role => role.id));
 const employeeWriteRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -16,7 +17,15 @@ const employeeWriteRateLimiter = rateLimit({
 
 function isCompanyManager(req) {
   return ['owner', 'admin'].includes(req.tenant.role) ||
-    ['hr-manager'].includes(req.tenant.membership.capabilityProfile);
+    ['hr-manager', 'hr', 'manager'].includes(req.tenant.membership.capabilityProfile);
+}
+
+function isTopLevelOrAdmin(req) {
+  if (['owner', 'admin'].includes(req.tenant?.role)) return true;
+  const profile = req.tenant?.membership?.capabilityProfile || '';
+  const resp = req.tenant?.membership?.responsibility || '';
+  return /executive|ceo|managing[\s_-]?director|director|owner|founder|co[\s_-]?founder|board|shareholder|investor|chairman|president/i.test(profile) ||
+    /executive|ceo|managing[\s_-]?director|director|owner|founder|co[\s_-]?founder|board|shareholder|investor|chairman|president/i.test(resp);
 }
 
 function assertCanChangeRole(req, role) {
@@ -46,8 +55,8 @@ export function createOrganizationRouter(repository, accountAuth) {
     createTenantAccessMiddleware(repository, { capability: 'people:read' }),
     async (req, res) => {
       const company = await repository.getCompany(req.tenant.id);
-      if (!company) throw new ApiError(404, 'Company profile not found.');
-      res.json({ companyType: company.companyType, departments: getJobCatalog(company.companyType) });
+      const companyType = company?.companyType || 'technology';
+      res.json({ companyType, departments: getJobCatalog(companyType) || [] });
     }
   );
 
@@ -187,7 +196,7 @@ export function createOrganizationRouter(repository, accountAuth) {
         }
         const employmentStatus = req.body?.employmentStatus;
         if (!EMPLOYMENT_STATUSES.has(employmentStatus)) {
-          throw new ApiError(400, 'Choose working, on leave, retired, or fired.');
+          throw new ApiError(400, 'Choose working, on-leave, retired, fired, departed, or settled.');
         }
         const updated = await repository.updateEmployeeStatus(
           req.tenant.id,
@@ -204,6 +213,247 @@ export function createOrganizationRouter(repository, accountAuth) {
           details: { employmentStatus }
         });
         res.json({ success: true });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    '/employees/upload-sheet',
+    createTenantAccessMiddleware(repository, { capability: 'people:write' }),
+    async (req, res, next) => {
+      try {
+        const { sheetData, filename = 'sheet.csv' } = req.body || {};
+        if (!sheetData) {
+          throw new ApiError(400, 'Provide sheetData (CSV text or base64 encoded spreadsheet).');
+        }
+        let data = sheetData;
+        if (typeof sheetData === 'string' && sheetData.startsWith('data:')) {
+          const commaIdx = sheetData.indexOf(',');
+          const base64Content = commaIdx !== -1 ? sheetData.slice(commaIdx + 1) : sheetData;
+          data = Buffer.from(base64Content, 'base64');
+        } else if (typeof sheetData === 'string' && filename.endsWith('.xlsx')) {
+          data = Buffer.from(sheetData, 'base64');
+        }
+        const company = await repository.getCompany(req.tenant.id);
+        const catalog = company ? getJobCatalog(company.companyType) || [] : [];
+        const candidates = parseSpreadsheet(data, { filename, catalog });
+        res.json({ candidates, total: candidates.length });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    '/employees/batch-provision',
+    createTenantAccessMiddleware(repository, { capability: 'people:write' }),
+    async (req, res, next) => {
+      try {
+        if (!accountAuth) throw new ApiError(503, 'Account provisioning is unavailable.');
+        if (!req.body?.verified) {
+          throw new ApiError(400, 'The employee roster must be verified before importing.');
+        }
+        const employees = req.body?.employees;
+        if (!Array.isArray(employees) || employees.length === 0) {
+          throw new ApiError(400, 'Provide a non-empty array of verified employees.');
+        }
+        const result = await accountAuth.batchProvisionEmployees(
+          employees,
+          req.tenant.id,
+          req.user.subject
+        );
+        await repository.addAuditEvent({
+          tenantId: req.tenant.id,
+          actorSubject: req.user.subject,
+          actorName: req.user.name,
+          eventType: 'employees.batch_provisioned',
+          details: { count: result.results.length, errors: result.errors.length }
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(201).json(result);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    '/employees/:employeeId/reset-password',
+    createTenantAccessMiddleware(repository, { capability: 'people:write' }),
+    async (req, res, next) => {
+      try {
+        if (!isCompanyManager(req)) {
+          throw new ApiError(403, 'Company administrator or HR access is required to reset passwords.');
+        }
+        const result = await accountAuth.resetEmployeePassword(
+          req.tenant.id,
+          req.params.employeeId
+        );
+        await repository.addAuditEvent({
+          tenantId: req.tenant.id,
+          actorSubject: req.user.subject,
+          actorName: req.user.name,
+          eventType: 'employee.password_reset',
+          targetId: req.params.employeeId,
+          details: { email: result.email }
+        });
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ success: true, ...result });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.get(
+    '/employees/:employeeId/handover',
+    createTenantAccessMiddleware(repository, { capability: 'people:read' }),
+    async (req, res, next) => {
+      try {
+        if (!isCompanyManager(req)) {
+          throw new ApiError(403, 'Company administrator or manager access required for task handover.');
+        }
+        const employee = await repository.getEmployee(req.tenant.id, req.params.employeeId);
+        if (!employee) throw new ApiError(404, 'Employee not found.');
+
+        const tasks = await repository.getEmployeeTasks(req.tenant.id, employee.employeeCode);
+        const allEmployees = await repository.listEmployees(req.tenant.id);
+        const activeEmployees = allEmployees.filter(
+          e => e.employeeId !== employee.employeeId && e.verificationStatus === 'verified' && e.employmentStatus === 'working'
+        );
+
+        res.json({
+          employee,
+          tasks,
+          taskCount: tasks.length,
+          activeEmployees
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    '/employees/:employeeId/handover/reassign',
+    createTenantAccessMiddleware(repository, { capability: 'people:write' }),
+    async (req, res, next) => {
+      try {
+        if (!isCompanyManager(req)) {
+          throw new ApiError(403, 'Company administrator or manager access required for task handover.');
+        }
+        const employee = await repository.getEmployee(req.tenant.id, req.params.employeeId);
+        if (!employee) throw new ApiError(404, 'Employee not found.');
+
+        const { targetEmployeeCode, specificTaskIds } = req.body || {};
+        if (!targetEmployeeCode || typeof targetEmployeeCode !== 'string') {
+          throw new ApiError(400, 'Target employee code is required for task reassignment.');
+        }
+
+        const reassignedCount = await repository.reassignTasks(
+          req.tenant.id,
+          employee.employeeCode,
+          targetEmployeeCode.trim(),
+          Array.isArray(specificTaskIds) ? specificTaskIds : null
+        );
+
+        await repository.addAuditEvent({
+          tenantId: req.tenant.id,
+          actorSubject: req.user.subject,
+          actorName: req.user.name,
+          eventType: 'tasks.handover_reassigned',
+          targetId: req.params.employeeId,
+          details: {
+            fromEmployee: employee.employeeCode,
+            toEmployee: targetEmployeeCode.trim(),
+            reassignedCount
+          }
+        });
+
+        res.json({ success: true, reassignedCount });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.delete(
+    '/employees/:employeeId',
+    createTenantAccessMiddleware(repository, { capability: 'people:write' }),
+    async (req, res, next) => {
+      try {
+        if (!isCompanyManager(req)) {
+          throw new ApiError(403, 'Company administrator or HR access is required to delete employee accounts.');
+        }
+        const result = await repository.deleteEmployee(req.tenant.id, req.params.employeeId);
+        if (!result) throw new ApiError(404, 'Employee not found.');
+
+        await repository.addAuditEvent({
+          tenantId: req.tenant.id,
+          actorSubject: req.user.subject,
+          actorName: req.user.name,
+          eventType: 'employee.deleted',
+          targetId: req.params.employeeId,
+          details: { employeeCode: result.employeeCode }
+        });
+
+        res.json({ success: true, deleted: result });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    '/employees/:employeeId/block',
+    createTenantAccessMiddleware(repository, { capability: 'people:write' }),
+    async (req, res, next) => {
+      try {
+        if (!isTopLevelOrAdmin(req) && !isCompanyManager(req)) {
+          throw new ApiError(403, 'Top-level executive, owner, or administrator authorization is required to block accounts.');
+        }
+        const result = await repository.blockEmployee(req.tenant.id, req.params.employeeId);
+        if (!result) throw new ApiError(404, 'Employee not found.');
+
+        await repository.addAuditEvent({
+          tenantId: req.tenant.id,
+          actorSubject: req.user.subject,
+          actorName: req.user.name,
+          eventType: 'employee.blocked',
+          targetId: req.params.employeeId,
+          details: { email: result.email }
+        });
+
+        res.json({ success: true, ...result });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    '/employees/:employeeId/unblock',
+    createTenantAccessMiddleware(repository, { capability: 'people:write' }),
+    async (req, res, next) => {
+      try {
+        if (!isTopLevelOrAdmin(req) && !isCompanyManager(req)) {
+          throw new ApiError(403, 'Top-level executive, owner, or administrator authorization is required to unblock accounts.');
+        }
+        const result = await repository.unblockEmployee(req.tenant.id, req.params.employeeId);
+        if (!result) throw new ApiError(404, 'Employee not found.');
+
+        await repository.addAuditEvent({
+          tenantId: req.tenant.id,
+          actorSubject: req.user.subject,
+          actorName: req.user.name,
+          eventType: 'employee.unblocked',
+          targetId: req.params.employeeId,
+          details: { email: result.email }
+        });
+
+        res.json({ success: true, ...result });
       } catch (error) {
         next(error);
       }
@@ -325,8 +575,9 @@ export function createOrganizationRouter(repository, accountAuth) {
         subject: req.user.subject,
         accessRole
       });
-      if (!['hr-manager', 'manager', 'team-leader'].includes(accessRole) &&
-        !['owner', 'admin'].includes(req.tenant.role)) {
+      const isAllowedRole = ['owner', 'admin'].includes(req.tenant.role) ||
+        ['hr-manager', 'manager', 'team-leader', 'executive', 'managing-director', 'founder', 'board-member', 'shareholder'].includes(accessRole);
+      if (!isAllowedRole) {
         throw new ApiError(403, 'Company overview access is not available for this role.');
       }
       res.json({ overview });

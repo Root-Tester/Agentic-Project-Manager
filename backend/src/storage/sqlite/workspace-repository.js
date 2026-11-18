@@ -205,21 +205,33 @@ export class WorkspaceRepository {
     ownerEmail,
     ownerName,
     ownerPasswordHash,
-    actorSubject
+    ownerSubject: explicitOwnerSubject,
+    actorSubject,
+    mustChangePassword,
+    termsAcceptedAt = new Date().toISOString()
   }) {
     const tenantId = `company-${randomUUID()}`;
-    const ownerSubject = randomUUID();
+    const ownerSubject = explicitOwnerSubject || randomUUID();
     const workspaceId = 'main';
     const now = new Date().toISOString();
+    const requirePasswordChange = mustChangePassword !== undefined
+      ? (mustChangePassword ? 1 : 0)
+      : (actorSubject ? 1 : 0);
     await this.ensureStorageCapacity(Buffer.byteLength(JSON.stringify({
       name, companyType, website, ownerEmail, ownerName, ownerPasswordHash
     })));
     this.transaction(() => {
-      this.database.prepare(
-        `INSERT INTO users
-          (subject, email, display_name, password_hash, must_change_password, created_at)
-         VALUES (?, ?, ?, ?, 1, ?)`
-      ).run(ownerSubject, ownerEmail, ownerName, ownerPasswordHash, now);
+      const existingUser = this.database.prepare(
+        'SELECT subject FROM users WHERE subject = ? OR email = ? COLLATE NOCASE'
+      ).get(ownerSubject, ownerEmail);
+
+      if (!existingUser) {
+        this.database.prepare(
+          `INSERT INTO users
+            (subject, email, display_name, password_hash, must_change_password, terms_accepted_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).run(ownerSubject, ownerEmail, ownerName, ownerPasswordHash, requirePasswordChange, termsAcceptedAt, now);
+      }
       this.database.prepare(
         'INSERT INTO tenants (id, name, created_at) VALUES (?, ?, ?)'
       ).run(tenantId, name, now);
@@ -227,7 +239,7 @@ export class WorkspaceRepository {
         `INSERT INTO company_profiles
           (tenant_id, company_type, legal_name, website, created_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(tenantId, companyType, name, website, actorSubject, now, now);
+      ).run(tenantId, companyType, name, website, actorSubject || ownerSubject, now, now);
       this.database.prepare(
         `INSERT INTO memberships
           (tenant_id, subject, role, status, display_name, created_at, updated_at)
@@ -251,12 +263,27 @@ export class WorkspaceRepository {
   }
 
   async getCompany(tenantId) {
-    return this.database.prepare(
+    const profile = this.database.prepare(
       `SELECT tenant_id AS tenantId, company_type AS companyType,
         legal_name AS name, website, created_at AS createdAt,
         updated_at AS updatedAt
        FROM company_profiles WHERE tenant_id = ?`
-    ).get(tenantId) || null;
+    ).get(tenantId);
+    if (profile) return profile;
+
+    const tenant = this.database.prepare(
+      'SELECT id, name, created_at AS createdAt FROM tenants WHERE id = ?'
+    ).get(tenantId);
+    if (!tenant) return null;
+
+    return {
+      tenantId: tenant.id,
+      companyType: 'technology',
+      name: tenant.name,
+      website: '',
+      createdAt: tenant.createdAt,
+      updatedAt: tenant.createdAt
+    };
   }
 
   async listCompanies() {
@@ -353,8 +380,10 @@ export class WorkspaceRepository {
         e.employment_status AS employmentStatus,
         e.verification_status AS verificationStatus, e.access_role AS accessRole,
         e.manager_subject AS managerSubject, e.verified_by AS verifiedBy,
+        COALESCE(u.status, 'active') AS accountStatus,
         e.created_at AS createdAt, e.updated_at AS updatedAt
       FROM employees e
+      LEFT JOIN users u ON u.subject = e.subject
     `;
     const rows = accessRole === 'manager' || accessRole === 'team-leader'
       ? this.database.prepare(`${base}
@@ -476,6 +505,157 @@ export class WorkspaceRepository {
       );
       return true;
     });
+  }
+
+  async getEmployee(tenantId, employeeId) {
+    return this.database.prepare(
+      `SELECT e.employee_id AS employeeId, e.subject, e.employee_code AS employeeCode,
+        e.email, e.display_name AS displayName, e.job_title AS jobTitle,
+        e.department, e.experience_level AS experienceLevel,
+        e.employment_status AS employmentStatus,
+        e.verification_status AS verificationStatus, e.access_role AS accessRole,
+        COALESCE(u.status, 'active') AS accountStatus,
+        e.created_at AS createdAt, e.updated_at AS updatedAt
+       FROM employees e
+       LEFT JOIN users u ON u.subject = e.subject
+       WHERE e.tenant_id = ? AND e.employee_id = ?`
+    ).get(tenantId, employeeId) || null;
+  }
+
+  async blockEmployee(tenantId, employeeId) {
+    const employee = this.database.prepare(
+      'SELECT subject, email, display_name AS displayName FROM employees WHERE tenant_id = ? AND employee_id = ?'
+    ).get(tenantId, employeeId);
+    if (!employee) return null;
+    return this.transaction(() => {
+      if (employee.subject) {
+        this.database.prepare(
+          "UPDATE users SET status = 'disabled' WHERE subject = ?"
+        ).run(employee.subject);
+        this.database.prepare(
+          "UPDATE memberships SET status = 'inactive', updated_at = ? WHERE tenant_id = ? AND subject = ?"
+        ).run(new Date().toISOString(), tenantId, employee.subject);
+      }
+      this.database.prepare(
+        "UPDATE employees SET updated_at = ? WHERE tenant_id = ? AND employee_id = ?"
+      ).run(new Date().toISOString(), tenantId, employeeId);
+      return { subject: employee.subject, email: employee.email, status: 'disabled' };
+    });
+  }
+
+  async unblockEmployee(tenantId, employeeId) {
+    const employee = this.database.prepare(
+      'SELECT subject, email, display_name AS displayName FROM employees WHERE tenant_id = ? AND employee_id = ?'
+    ).get(tenantId, employeeId);
+    if (!employee) return null;
+    return this.transaction(() => {
+      if (employee.subject) {
+        this.database.prepare(
+          "UPDATE users SET status = 'active' WHERE subject = ?"
+        ).run(employee.subject);
+        this.database.prepare(
+          "UPDATE memberships SET status = 'active', updated_at = ? WHERE tenant_id = ? AND subject = ?"
+        ).run(new Date().toISOString(), tenantId, employee.subject);
+      }
+      this.database.prepare(
+        "UPDATE employees SET updated_at = ? WHERE tenant_id = ? AND employee_id = ?"
+      ).run(new Date().toISOString(), tenantId, employeeId);
+      return { subject: employee.subject, email: employee.email, status: 'active' };
+    });
+  }
+
+  async deleteEmployee(tenantId, employeeId) {
+    const now = new Date().toISOString();
+    return this.transaction(() => {
+      const employee = this.database.prepare(
+        'SELECT subject, employee_code AS employeeCode FROM employees WHERE tenant_id = ? AND employee_id = ?'
+      ).get(tenantId, employeeId);
+      if (!employee) return false;
+
+      this.database.prepare(
+        'DELETE FROM team_assignments WHERE tenant_id = ? AND employee_id = ?'
+      ).run(tenantId, employeeId);
+
+      this.database.prepare(
+        'DELETE FROM employees WHERE tenant_id = ? AND employee_id = ?'
+      ).run(tenantId, employeeId);
+
+      this.database.prepare(
+        'DELETE FROM memberships WHERE tenant_id = ? AND subject = ?'
+      ).run(tenantId, employee.subject);
+
+      return { success: true, employeeCode: employee.employeeCode, subject: employee.subject };
+    });
+  }
+
+  async resetEmployeePassword(tenantId, employeeId, passwordHash) {
+    const employee = this.database.prepare(
+      'SELECT subject, email FROM employees WHERE tenant_id = ? AND employee_id = ?'
+    ).get(tenantId, employeeId);
+    if (!employee) return null;
+    this.database.prepare(
+      'UPDATE users SET password_hash = ?, must_change_password = 1 WHERE subject = ?'
+    ).run(passwordHash, employee.subject);
+    return { subject: employee.subject, email: employee.email };
+  }
+
+  async getEmployeeTasks(tenantId, employeeCode) {
+    const workspaces = this.database.prepare(
+      'SELECT workspace_id AS workspaceId, name, tasks_json AS tasksJson FROM workspaces WHERE tenant_id = ?'
+    ).all(tenantId);
+    const assignedTasks = [];
+
+    for (const ws of workspaces) {
+      const taskDoc = parseJson(ws.tasksJson, { tasks: [] });
+      const tasks = Array.isArray(taskDoc?.tasks) ? taskDoc.tasks : [];
+      for (const task of tasks) {
+        if (task && task.assigned_to === employeeCode) {
+          assignedTasks.push({
+            workspaceId: ws.workspaceId,
+            workspaceName: ws.name,
+            taskId: task.task_id,
+            taskName: task.task_name,
+            status: task.status,
+            priority: task.priority,
+            estimatedHours: task.estimated_hours,
+            startDate: task.start_date,
+            endDate: task.end_date
+          });
+        }
+      }
+    }
+
+    return assignedTasks;
+  }
+
+  async reassignTasks(tenantId, sourceEmployeeCode, targetEmployeeCode, specificTaskIds = null) {
+    const workspaces = this.database.prepare(
+      'SELECT workspace_id AS workspaceId, tasks_json AS tasksJson FROM workspaces WHERE tenant_id = ?'
+    ).all(tenantId);
+    let reassignedCount = 0;
+    const taskSet = specificTaskIds ? new Set(specificTaskIds) : null;
+
+    for (const ws of workspaces) {
+      const taskDoc = parseJson(ws.tasksJson, { tasks: [] });
+      if (!Array.isArray(taskDoc?.tasks)) continue;
+      let modified = false;
+
+      for (const task of taskDoc.tasks) {
+        if (task && task.assigned_to === sourceEmployeeCode) {
+          if (!taskSet || taskSet.has(task.task_id)) {
+            task.assigned_to = targetEmployeeCode;
+            modified = true;
+            reassignedCount++;
+          }
+        }
+      }
+
+      if (modified) {
+        await this.setDocument(tenantId, ws.workspaceId, 'tasks', taskDoc);
+      }
+    }
+
+    return reassignedCount;
   }
 
   async createTeam(tenantId, { teamId, name, description, leaderEmployeeId, workspaceId, actorSubject }) {
@@ -820,6 +1000,40 @@ export class WorkspaceRepository {
     return Boolean(this.database.prepare(
       "SELECT 1 FROM users WHERE subject = ? AND status = 'active'"
     ).get(subject));
+  }
+
+  async isOwnerOrExecutive(subject) {
+    if (!subject) return false;
+    try {
+      const topLevelPattern = /executive|ceo|managing[\s_-]?director|director|owner|founder|co[\s_-]?founder|board|shareholder|investor|chairman|president/i;
+      const topRoles = ['owner', 'founder', 'board-member', 'shareholder', 'executive', 'managing-director', 'director', 'chairman'];
+      const membershipRows = this.database.prepare(
+        `SELECT role, capability_profile AS capabilityProfile, responsibility
+         FROM memberships WHERE subject = ? AND status = 'active'`
+      ).all(subject);
+      if (membershipRows.some(row =>
+        row.role === 'owner' ||
+        topRoles.includes(row.role) ||
+        topRoles.includes(row.capabilityProfile) ||
+        topLevelPattern.test(row.role || '') ||
+        topLevelPattern.test(row.capabilityProfile || '') ||
+        topLevelPattern.test(row.responsibility || '')
+      )) {
+        return true;
+      }
+      const employeeRows = this.database.prepare(
+        `SELECT access_role AS accessRole, job_title AS jobTitle
+         FROM employees WHERE subject = ?`
+      ).all(subject);
+      return employeeRows.some(row =>
+        row.accessRole === 'owner' ||
+        topRoles.includes(row.accessRole) ||
+        topLevelPattern.test(row.accessRole || '') ||
+        topLevelPattern.test(row.jobTitle || '')
+      );
+    } catch {
+      return false;
+    }
   }
 
   async listTenantsForSubject(subject) {

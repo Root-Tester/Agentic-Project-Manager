@@ -514,6 +514,7 @@ function MembersPanel({ user, tenantId, role, onError }) {
     displayName: '', email: '', role: 'editor',
     capabilityProfile: '', responsibility: '', department: ''
   });
+  const [createdCredentials, setCreatedCredentials] = useState(null);
   const [busy, setBusy] = useState(false);
   const canManage = role === 'owner' || role === 'admin';
   const selectedMember = members.find(member => member.subject === selectedSubject);
@@ -561,13 +562,17 @@ function MembersPanel({ user, tenantId, role, onError }) {
   async function saveMember(event) {
     event.preventDefault();
     setBusy(true);
+    setCreatedCredentials(null);
     try {
       const editing = Boolean(selectedSubject);
-      await apiRequest(
+      const res = await apiRequest(
         tenantPath(tenantId, editing ? `/members/${encodeURIComponent(selectedSubject)}` : '/members'),
         user.access_token,
         { method: editing ? 'PUT' : 'POST', body: JSON.stringify(form) }
       );
+      if (res?.credentials) {
+        setCreatedCredentials(res.credentials);
+      }
       await loadMembers();
       newMember();
     } catch (error) {
@@ -583,6 +588,15 @@ function MembersPanel({ user, tenantId, role, onError }) {
         <div><p className="eyebrow">TEAM DIRECTORY</p><h2>People and access</h2></div>
         <p>Job responsibilities shape the workspace; organization roles and capability profiles control access.</p>
       </header>
+      {createdCredentials && (
+        <div className="temporary-credentials" role="status">
+          <strong>Member added with platform-generated credentials (shown once)</strong>
+          <span>Login ID / Email: <strong>{createdCredentials.email}</strong></span>
+          <code>Password: {createdCredentials.temporaryPassword}</code>
+          <small>Share these credentials securely with the member. They can log in immediately and will be prompted to set a new password on first sign-in.</small>
+          <button className="secondary" type="button" onClick={() => setCreatedCredentials(null)}>Dismiss</button>
+        </div>
+      )}
       <div className="member-layout">
         <section className="panel feature-panel">
           <div className="member-list-heading"><h3>Tenant members</h3>{canManage && <button className="secondary" onClick={newMember}>Add member</button>}</div>
@@ -600,8 +614,8 @@ function MembersPanel({ user, tenantId, role, onError }) {
         </section>
         {canManage && (
           <form className="panel member-form" onSubmit={saveMember}>
-            <h3>{selectedMember ? 'Edit member' : 'Add tenant member'}</h3>
-            {!selectedMember && <p className="feature-note">The person must register first. Enter their account email to grant access to this tenant.</p>}
+            <h3>{selectedMember ? 'Edit member' : 'Add team member'}</h3>
+            {!selectedMember && <p className="feature-note">Team members do not need to register on the platform. The platform will automatically generate login credentials (Login ID & password).</p>}
             <label>Display name<input value={form.displayName} onChange={event => setForm(current => ({ ...current, displayName: event.target.value }))} required maxLength={120} /></label>
             <label>Email<input type="email" value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} maxLength={254} /></label>
             <label>Organization access role
@@ -772,6 +786,7 @@ function EmployeeManagementPanel({ user, tenantId, role, profile, workspaceId, o
   const [employees, setEmployees] = useState([]);
   const [teams, setTeams] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
     employeeCode: '', displayName: '', email: '', jobTitle: '',
     department: '', experienceLevel: 'mid-level', accessRole: 'employee'
@@ -780,60 +795,105 @@ function EmployeeManagementPanel({ user, tenantId, role, profile, workspaceId, o
   const [assignments, setAssignments] = useState({});
   const [statusEdits, setStatusEdits] = useState({});
   const [credentials, setCredentials] = useState(null);
+  const [batchCredentials, setBatchCredentials] = useState(null);
+  const [sheetCandidates, setSheetCandidates] = useState(null);
+  const [sheetFilename, setSheetFilename] = useState('');
+  const [sheetVerified, setSheetVerified] = useState(false);
+  const [handoverModal, setHandoverModal] = useState(null);
   const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef(null);
   const isOwner = role === 'owner' || role === 'admin';
+  const isTopLevelOrAdmin = isOwner ||
+    ['executive', 'managing-director', 'founder', 'board-member', 'shareholder'].includes(profile) ||
+    /executive|ceo|managing[\s_-]?director|director|owner|founder|co[\s_-]?founder|board|shareholder|investor|chairman|president/i.test(profile);
   const canProvision = isOwner || profile === 'hr' || profile === 'hr-manager';
   const canVerify = isOwner || profile === 'hr-manager';
+  const canManageWork = isOwner || ['hr-manager', 'hr', 'manager'].includes(profile);
   const canCreateTeams = canVerify;
-  const availableEmployees = employees.filter(employee =>
-    employee.verificationStatus === 'verified' && employee.employmentStatus === 'working'
+  const availableEmployees = (Array.isArray(employees) ? employees : []).filter(employee =>
+    employee && employee.verificationStatus === 'verified' && employee.employmentStatus === 'working'
   );
 
   async function loadAll() {
-    const [employeeResult, teamResult, catalogResult] = await Promise.all([
-      apiRequest(tenantPath(tenantId, '/employees'), user.access_token),
-      apiRequest(tenantPath(tenantId, '/teams'), user.access_token),
-      apiRequest(tenantPath(tenantId, '/job-catalog'), user.access_token)
-    ]);
-    setEmployees(employeeResult.employees);
-    setTeams(teamResult.teams);
-    setDepartments(catalogResult.departments);
-    setForm(current => {
-      const currentDepartment = catalogResult.departments.find(item => item.department === current.department);
-      return currentDepartment?.titles.includes(current.jobTitle)
-        ? current
-        : {
-          ...current,
-          department: catalogResult.departments[0]?.department || '',
-          jobTitle: catalogResult.departments[0]?.titles[0] || ''
-        };
-    });
+    setLoading(true);
+    try {
+      const [employeeResult, teamResult, catalogResult] = await Promise.allSettled([
+        apiRequest(tenantPath(tenantId, '/employees'), user.access_token),
+        apiRequest(tenantPath(tenantId, '/teams'), user.access_token),
+        apiRequest(tenantPath(tenantId, '/job-catalog'), user.access_token)
+      ]);
+      const empList = employeeResult.status === 'fulfilled' && Array.isArray(employeeResult.value?.employees)
+        ? employeeResult.value.employees
+        : [];
+      const teamList = teamResult.status === 'fulfilled' && Array.isArray(teamResult.value?.teams)
+        ? teamResult.value.teams
+        : [];
+      const deptList = catalogResult.status === 'fulfilled' && Array.isArray(catalogResult.value?.departments)
+        ? catalogResult.value.departments
+        : [];
+
+      setEmployees(empList);
+      setTeams(teamList);
+      setDepartments(deptList);
+
+      if (deptList.length > 0) {
+        setForm(current => {
+          const currentDepartment = deptList.find(item => item.department === current.department);
+          return currentDepartment?.titles?.includes(current.jobTitle)
+            ? current
+            : {
+              ...current,
+              department: deptList[0]?.department || '',
+              jobTitle: deptList[0]?.titles?.[0] || ''
+            };
+        });
+      }
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     let active = true;
-    Promise.all([
+    setLoading(true);
+    Promise.allSettled([
       apiRequest(tenantPath(tenantId, '/employees'), user.access_token),
       apiRequest(tenantPath(tenantId, '/teams'), user.access_token),
       apiRequest(tenantPath(tenantId, '/job-catalog'), user.access_token)
     ])
       .then(([employeeResult, teamResult, catalogResult]) => {
         if (!active) return;
-        setEmployees(employeeResult.employees);
-        setTeams(teamResult.teams);
-        setDepartments(catalogResult.departments);
-        setForm(current => {
-          const currentDepartment = catalogResult.departments.find(item => item.department === current.department);
-          return currentDepartment?.titles.includes(current.jobTitle)
-            ? current
-            : {
-              ...current,
-              department: catalogResult.departments[0]?.department || '',
-              jobTitle: catalogResult.departments[0]?.titles[0] || ''
-            };
-        });
+        const empList = employeeResult.status === 'fulfilled' && Array.isArray(employeeResult.value?.employees)
+          ? employeeResult.value.employees
+          : [];
+        const teamList = teamResult.status === 'fulfilled' && Array.isArray(teamResult.value?.teams)
+          ? teamResult.value.teams
+          : [];
+        const deptList = catalogResult.status === 'fulfilled' && Array.isArray(catalogResult.value?.departments)
+          ? catalogResult.value.departments
+          : [];
+
+        setEmployees(empList);
+        setTeams(teamList);
+        setDepartments(deptList);
+
+        if (deptList.length > 0) {
+          setForm(current => {
+            const currentDepartment = deptList.find(item => item.department === current.department);
+            return currentDepartment?.titles?.includes(current.jobTitle)
+              ? current
+              : {
+                ...current,
+                department: deptList[0]?.department || '',
+                jobTitle: deptList[0]?.titles?.[0] || ''
+              };
+          });
+        }
       })
-      .catch(error => active && onError(error.message));
+      .catch(error => active && onError(error.message))
+      .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [onError, tenantId, user]);
 
@@ -853,6 +913,218 @@ function EmployeeManagementPanel({ user, tenantId, role, profile, workspaceId, o
       await loadAll();
     } catch (error) {
       onError(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSheetFileSelect(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    setSheetCandidates(null);
+    setSheetVerified(false);
+    setSheetFilename(file.name);
+
+    try {
+      const reader = new FileReader();
+      const isXlsx = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
+      reader.onload = async e => {
+        try {
+          const sheetData = e.target.result;
+          const result = await apiRequest(tenantPath(tenantId, '/employees/upload-sheet'), user.access_token, {
+            method: 'POST',
+            body: JSON.stringify({ sheetData, filename: file.name })
+          });
+          setSheetCandidates(result.candidates || []);
+        } catch (err) {
+          onError(err.message);
+        } finally {
+          setBusy(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      };
+
+      if (isXlsx) {
+        reader.readAsDataURL(file);
+      } else {
+        reader.readAsText(file);
+      }
+    } catch (err) {
+      onError(err.message);
+      setBusy(false);
+    }
+  }
+
+  function updateCandidateCell(index, field, value) {
+    setSheetCandidates(current => {
+      const updated = [...current];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  }
+
+  function deleteCandidateRow(index) {
+    setSheetCandidates(current => current.filter((_, i) => i !== index));
+  }
+
+  function addCandidateRow() {
+    setSheetCandidates(current => [
+      ...(current || []),
+      {
+        employeeCode: `EMP-${String((current?.length || 0) + 1).padStart(3, '0')}`,
+        displayName: '',
+        email: '',
+        jobTitle: departments[0]?.titles?.[0] || 'Software developer',
+        department: departments[0]?.department || 'Engineering',
+        experienceLevel: 'mid-level',
+        accessRole: 'employee'
+      }
+    ]);
+  }
+
+  async function submitBatchImport() {
+    if (!sheetVerified) {
+      onError('Check the verification box to confirm you have reviewed the entire employee sheet.');
+      return;
+    }
+    if (!sheetCandidates || sheetCandidates.length === 0) {
+      onError('No candidate rows to import.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await apiRequest(tenantPath(tenantId, '/employees/batch-provision'), user.access_token, {
+        method: 'POST',
+        body: JSON.stringify({ employees: sheetCandidates, verified: true })
+      });
+      setBatchCredentials(result.results || []);
+      setSheetCandidates(null);
+      setSheetVerified(false);
+      await loadAll();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPassword(employee) {
+    setBusy(true);
+    setCredentials(null);
+    try {
+      const result = await apiRequest(
+        tenantPath(tenantId, `/employees/${encodeURIComponent(employee.employeeId)}/reset-password`),
+        user.access_token,
+        { method: 'POST' }
+      );
+      setCredentials({
+        email: result.email,
+        password: result.temporaryPassword,
+        recovered: true
+      });
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openHandover(employee) {
+    setBusy(true);
+    try {
+      const result = await apiRequest(
+        tenantPath(tenantId, `/employees/${encodeURIComponent(employee.employeeId)}/handover`),
+        user.access_token
+      );
+      setHandoverModal({
+        employee: result.employee,
+        tasks: result.tasks,
+        activeEmployees: result.activeEmployees,
+        targetEmployeeCode: result.activeEmployees[0]?.employeeCode || ''
+      });
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function executeHandover() {
+    if (!handoverModal || !handoverModal.targetEmployeeCode) return;
+    setBusy(true);
+    try {
+      const result = await apiRequest(
+        tenantPath(tenantId, `/employees/${encodeURIComponent(handoverModal.employee.employeeId)}/handover/reassign`),
+        user.access_token,
+        {
+          method: 'POST',
+          body: JSON.stringify({ targetEmployeeCode: handoverModal.targetEmployeeCode })
+        }
+      );
+      alert(`Successfully reassigned ${result.reassignedCount} task(s) to ${handoverModal.targetEmployeeCode}.`);
+      setHandoverModal(null);
+      await loadAll();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteEmployeeAccount(employee) {
+    if (!window.confirm(`Permanently delete account and company membership for ${employee.displayName}? Handover should be complete before deletion.`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiRequest(
+        tenantPath(tenantId, `/employees/${encodeURIComponent(employee.employeeId)}`),
+        user.access_token,
+        { method: 'DELETE' }
+      );
+      await loadAll();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function blockEmployeeAccount(employee) {
+    if (!window.confirm(`Block account for ${employee.displayName}? Their session will be invalidated immediately.`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiRequest(
+        tenantPath(tenantId, `/employees/${encodeURIComponent(employee.employeeId)}/block`),
+        user.access_token,
+        { method: 'POST' }
+      );
+      await loadAll();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unblockEmployeeAccount(employee) {
+    if (!window.confirm(`Unblock account for ${employee.displayName}?`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiRequest(
+        tenantPath(tenantId, `/employees/${encodeURIComponent(employee.employeeId)}/unblock`),
+        user.access_token,
+        { method: 'POST' }
+      );
+      await loadAll();
+    } catch (err) {
+      onError(err.message);
     } finally {
       setBusy(false);
     }
@@ -932,19 +1204,270 @@ function EmployeeManagementPanel({ user, tenantId, role, profile, workspaceId, o
     }
   }
 
-  const titles = departments.find(item => item.department === form.department)?.titles || [];
+  const deptList = Array.isArray(departments) ? departments : [];
+  const currentDeptObj = deptList.find(item => item && item.department === form.department);
+  const titles = Array.isArray(currentDeptObj?.titles) ? currentDeptObj.titles : [];
   return (
     <section className="feature-page">
       <header className="feature-heading">
-        <div><p className="eyebrow">COMPANY DIRECTORY</p><h2>Employees and teams</h2></div>
-        <p>HR provisions hires; an HR manager verifies access and organizes approved staff into teams.</p>
+        <div>
+          <p className="eyebrow">COMPANY DIRECTORY</p>
+          <h2>Employees and teams</h2>
+        </div>
+        <div className="actions">
+          {canProvision && (
+            <>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".xlsx,.xls,.csv"
+                style={{ display: 'none' }}
+                onChange={handleSheetFileSelect}
+              />
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy}
+              >
+                Upload Excel / CSV Roster
+              </button>
+            </>
+          )}
+        </div>
       </header>
-      {credentials && <div className="temporary-credentials" role="status">
-        {credentials.existing
-          ? <strong>This employee already has an account. No password was created or revealed; share the verification outcome after approval.</strong>
-          : <><strong>Temporary password (shown once)</strong><span>{credentials.email}</span><code>{credentials.password}</code><small>Share it privately. The employee must replace it at first sign-in.</small></>}
-        <button className="secondary" onClick={() => setCredentials(null)}>Hide</button>
-      </div>}
+
+      {credentials && (
+        <div className="temporary-credentials" role="status">
+          {credentials.recovered ? (
+            <strong>Password recovered for {credentials.email}. Share this temporary password securely:</strong>
+          ) : credentials.existing ? (
+            <strong>This employee already has an account. No password was created or revealed; share the verification outcome after approval.</strong>
+          ) : (
+            <strong>Temporary password generated (shown once) for {credentials.email}:</strong>
+          )}
+          {credentials.password && <code>{credentials.password}</code>}
+          <small>The employee must change their password on first sign-in before accessing company workspaces.</small>
+          <button className="secondary" onClick={() => setCredentials(null)}>Hide</button>
+        </div>
+      )}
+
+      {batchCredentials && (
+        <div className="temporary-credentials" role="status">
+          <strong>Batch import complete! {batchCredentials.length} account(s) provisioned with platform-generated credentials:</strong>
+          <table className="credentials-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Login ID (Email)</th>
+                <th>Employee ID</th>
+                <th>Temporary Password</th>
+              </tr>
+            </thead>
+            <tbody>
+              {batchCredentials.map((item, idx) => (
+                <tr key={idx}>
+                  <td>{item.displayName}</td>
+                  <td>{item.email}</td>
+                  <td>{item.employeeCode}</td>
+                  <td><code>{item.temporaryPassword || 'Existing account password'}</code></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <small>Share credentials securely. All employees with generated passwords must set a new private password at first login.</small>
+          <button className="secondary" onClick={() => setBatchCredentials(null)}>Dismiss credentials</button>
+        </div>
+      )}
+
+      {sheetCandidates && (
+        <section className="panel sheet-preview-container">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">AI AUTOMATION & SHEET INSPECTION</p>
+              <h3>Inspect & Verify Spreadsheet Roster: {sheetFilename}</h3>
+              <p>Review, edit missing details, or add/delete persons before generating employee IDs and secure passwords.</p>
+            </div>
+            <button className="secondary" type="button" onClick={() => setSheetCandidates(null)}>Cancel</button>
+          </div>
+          <table className="sheet-preview-table">
+            <thead>
+              <tr>
+                <th>Full Name</th>
+                <th>Work Email</th>
+                <th>Employee Code</th>
+                <th>Department</th>
+                <th>Job Title</th>
+                <th>Level</th>
+                <th>Access Role</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sheetCandidates.map((cand, idx) => (
+                <tr key={idx}>
+                  <td>
+                    <input
+                      value={cand.displayName}
+                      placeholder="Full Name"
+                      onChange={e => updateCandidateCell(idx, 'displayName', e.target.value)}
+                      required
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="email"
+                      value={cand.email}
+                      placeholder="Work Email"
+                      onChange={e => updateCandidateCell(idx, 'email', e.target.value)}
+                      required
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={cand.employeeCode}
+                      placeholder="Employee ID"
+                      onChange={e => updateCandidateCell(idx, 'employeeCode', e.target.value)}
+                      required
+                    />
+                  </td>
+                  <td>
+                    <select
+                      value={cand.department}
+                      onChange={e => updateCandidateCell(idx, 'department', e.target.value)}
+                    >
+                      {departments.map(d => <option key={d.department} value={d.department}>{d.department}</option>)}
+                      {!departments.some(d => d.department === cand.department) && (
+                        <option value={cand.department}>{cand.department}</option>
+                      )}
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      value={cand.jobTitle}
+                      placeholder="Job Title"
+                      onChange={e => updateCandidateCell(idx, 'jobTitle', e.target.value)}
+                      required
+                    />
+                  </td>
+                  <td>
+                    <select
+                      value={cand.experienceLevel}
+                      onChange={e => updateCandidateCell(idx, 'experienceLevel', e.target.value)}
+                    >
+                      <option value="fresher">Fresher</option>
+                      <option value="mid-level">Mid-level</option>
+                      <option value="senior">Senior</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={cand.accessRole}
+                      onChange={e => updateCandidateCell(idx, 'accessRole', e.target.value)}
+                    >
+                      <option value="employee">Employee</option>
+                      <option value="team-leader">Team leader</option>
+                      <option value="manager">Manager</option>
+                      {isOwner && <><option value="hr">HR</option><option value="hr-manager">HR manager</option></>}
+                      {profile === 'hr-manager' && <><option value="hr">HR</option><option value="hr-manager">HR manager</option></>}
+                    </select>
+                  </td>
+                  <td>
+                    <button
+                      className="danger-button"
+                      type="button"
+                      onClick={() => deleteCandidateRow(idx)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="sheet-actions">
+            <button className="secondary" type="button" onClick={addCandidateRow}>
+              + Add missing person / row
+            </button>
+            <label className="policy-checkbox" style={{ margin: 0 }}>
+              <input
+                type="checkbox"
+                checked={sheetVerified}
+                onChange={e => setSheetVerified(e.target.checked)}
+              />
+              <span>I have inspected and verified this complete roster sheet</span>
+            </label>
+            <button
+              disabled={busy || !sheetVerified || sheetCandidates.length === 0}
+              onClick={submitBatchImport}
+            >
+              {busy ? 'Importing…' : `Import & Generate Credentials (${sheetCandidates.length} employees)`}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {handoverModal && (
+        <div className="policy-modal-backdrop" role="dialog" aria-modal="true" onClick={() => setHandoverModal(null)}>
+          <div className="handover-modal" onClick={e => e.stopPropagation()}>
+            <header>
+              <div>
+                <p className="eyebrow">OFFBOARDING & SETTLEMENTS</p>
+                <h2>Work & Task Handout for {handoverModal.employee.displayName} ({handoverModal.employee.employeeCode})</h2>
+                <small>Status: <span className="badge-danger">{handoverModal.employee.employmentStatus}</span></small>
+              </div>
+              <button className="secondary" type="button" onClick={() => setHandoverModal(null)}>✕</button>
+            </header>
+            <p>
+              Reassign active project tasks from this employee to another team member to ensure continuous delivery before deleting their account.
+            </p>
+            <h3>Assigned tasks ({handoverModal.tasks.length}):</h3>
+            {handoverModal.tasks.length > 0 ? (
+              <ul className="handover-task-list">
+                {handoverModal.tasks.map(task => (
+                  <li key={`${task.workspaceId}:${task.taskId}`} className="handover-task-item">
+                    <div>
+                      <strong>{task.taskName}</strong> <span>({task.taskId})</span>
+                      <small style={{ display: 'block', color: '#9eabc0' }}>Workspace: {task.workspaceName} · Status: {task.status}</small>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-status">No active tasks are currently assigned to this employee.</p>
+            )}
+
+            {handoverModal.activeEmployees.length > 0 && (
+              <div style={{ marginTop: '16px' }}>
+                <label>Reassign all tasks to active employee:
+                  <select
+                    value={handoverModal.targetEmployeeCode}
+                    onChange={e => setHandoverModal(current => ({ ...current, targetEmployeeCode: e.target.value }))}
+                  >
+                    {handoverModal.activeEmployees.map(emp => (
+                      <option key={emp.employeeCode} value={emp.employeeCode}>
+                        {emp.displayName} ({emp.employeeCode}) · {emp.jobTitle}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+            <div className="actions" style={{ marginTop: '20px', justifyContent: 'flex-end' }}>
+              <button className="secondary" type="button" onClick={() => setHandoverModal(null)}>Close</button>
+              {handoverModal.tasks.length > 0 && (
+                <button
+                  disabled={busy || !handoverModal.targetEmployeeCode}
+                  onClick={executeHandover}
+                >
+                  {busy ? 'Reassigning…' : 'Reassign All Tasks'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {canProvision && <form className="panel member-form" onSubmit={addEmployee}>
         <h3>Add a hire for verification</h3>
         <div className="roster-fields">
@@ -971,11 +1494,74 @@ function EmployeeManagementPanel({ user, tenantId, role, profile, workspaceId, o
         {employees.length ? <ul className="member-list">{employees.map(employee => (
           <li key={employee.employeeId} className="organization-employee">
             <div className="employee-directory-entry">
-              <strong>{employee.displayName}</strong>
+              <strong>
+                {employee.displayName}
+                {employee.accountStatus === 'disabled' && (
+                  <span className="badge-danger" style={{ marginLeft: 8, fontSize: '0.8em', padding: '2px 6px', borderRadius: 4 }}>Blocked</span>
+                )}
+              </strong>
               <span>{employee.jobTitle} · {employee.department} · {employee.accessRole}</span>
               <small>{employee.employeeCode} · {employee.email} · {employee.experienceLevel}</small>
               <small>{employee.verificationStatus.replaceAll('-', ' ')} · {employee.employmentStatus.replaceAll('-', ' ')}</small>
               {employee.teams.length > 0 && <small>Teams: {employee.teams.map(team => team.name).join(', ')}</small>}
+            </div>
+            <div className="actions" style={{ flexWrap: 'wrap', gap: '8px' }}>
+              {isTopLevelOrAdmin && (
+                employee.accountStatus === 'disabled' ? (
+                  <button
+                    className="secondary"
+                    type="button"
+                    title="Unblock account and restore access"
+                    disabled={busy}
+                    onClick={() => unblockEmployeeAccount(employee)}
+                  >
+                    Unblock account
+                  </button>
+                ) : (
+                  <button
+                    className="danger-button"
+                    type="button"
+                    title="Block employee account based on executive authorization"
+                    disabled={busy}
+                    onClick={() => blockEmployeeAccount(employee)}
+                  >
+                    Block account
+                  </button>
+                )
+              )}
+              {canProvision && (
+                <button
+                  className="secondary"
+                  type="button"
+                  title="Recover lost initial password or reset credentials"
+                  disabled={busy}
+                  onClick={() => resetPassword(employee)}
+                >
+                  Reset / Recover password
+                </button>
+              )}
+              {canManageWork && ['fired', 'retired', 'departed', 'settled', 'on-leave'].includes(employee.employmentStatus) && (
+                <button
+                  className="secondary"
+                  type="button"
+                  title="Hand over tasks to another active team member"
+                  disabled={busy}
+                  onClick={() => openHandover(employee)}
+                >
+                  Hand over tasks
+                </button>
+              )}
+              {canProvision && (
+                <button
+                  className="danger-button"
+                  type="button"
+                  title="Delete employee account and company membership"
+                  disabled={busy}
+                  onClick={() => deleteEmployeeAccount(employee)}
+                >
+                  Delete account
+                </button>
+              )}
             </div>
             {employee.verificationStatus === 'verified' && canProvision && <div className="actions">
               <label>
@@ -992,6 +1578,8 @@ function EmployeeManagementPanel({ user, tenantId, role, profile, workspaceId, o
                   <option value="on-leave">On leave</option>
                   <option value="retired">Retired</option>
                   <option value="fired">Fired</option>
+                  <option value="departed">Departed</option>
+                  <option value="settled">Settlements approved</option>
                 </select>
               </label>
               <button

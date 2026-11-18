@@ -1,4 +1,5 @@
 const COMMON = {
+  Governance: ['Owner','Board member', 'Shareholder', 'Founder', 'Co-founder', 'Managing director', 'Chief Executive Officer', 'Executive Director'],
   People: ['HR manager', 'HR specialist', 'Recruiter'],
   Operations: ['Operations manager', 'Operations specialist'],
   Finance: ['Finance manager', 'Accountant'],
@@ -53,7 +54,12 @@ export const COMPANY_ACCESS_ROLES = [
   { id: 'team-leader', label: 'Team leader' },
   { id: 'manager', label: 'Manager' },
   { id: 'hr', label: 'HR' },
-  { id: 'hr-manager', label: 'HR manager' }
+  { id: 'hr-manager', label: 'HR manager' },
+  { id: 'managing-director', label: 'Managing Director' },
+  { id: 'founder', label: 'Founder / Co-founder' },
+  { id: 'board-member', label: 'Board Member' },
+  { id: 'shareholder', label: 'Shareholder' },
+  { id: 'owner', label: 'Owner' }
 ];
 
 export function getJobCatalog(companyType) {
