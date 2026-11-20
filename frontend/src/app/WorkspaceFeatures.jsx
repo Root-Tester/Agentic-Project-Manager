@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { apiRequest, apiStream } from '../api/client.js';
 import { RESPONSIBILITY_PROFILES } from '../../../shared/access/capabilities.js';
 
@@ -803,13 +803,15 @@ function EmployeeManagementPanel({ user, tenantId, role, profile, workspaceId, o
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef(null);
   const isOwner = role === 'owner' || role === 'admin';
+  const userProfile = profile || (user && user.profile && user.profile.sub) || '';
   const isTopLevelOrAdmin = isOwner ||
-    ['executive', 'managing-director', 'founder', 'board-member', 'shareholder'].includes(profile) ||
-    /executive|ceo|managing[\s_-]?director|director|owner|founder|co[\s_-]?founder|board|shareholder|investor|chairman|president/i.test(profile);
-  const canProvision = isOwner || profile === 'hr' || profile === 'hr-manager';
-  const canVerify = isOwner || profile === 'hr-manager';
-  const canManageWork = isOwner || ['hr-manager', 'hr', 'manager'].includes(profile);
+    ['executive', 'managing-director', 'founder', 'board-member', 'shareholder'].includes(userProfile) ||
+    /executive|ceo|managing[\s_-]?director|director|owner|founder|co[\s_-]?founder|board|shareholder|investor|chairman|president/i.test(userProfile);
+  const canProvision = isOwner || userProfile === 'hr' || userProfile === 'hr-manager';
+  const canVerify = isOwner || userProfile === 'hr-manager';
+  const canManageWork = isOwner || ['hr-manager', 'hr', 'manager'].includes(userProfile);
   const canCreateTeams = canVerify;
+
   const availableEmployees = (Array.isArray(employees) ? employees : []).filter(employee =>
     employee && employee.verificationStatus === 'verified' && employee.employmentStatus === 'working'
   );
